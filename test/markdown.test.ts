@@ -180,3 +180,57 @@ test("chunkTelegramHtml handles oversized code blocks with language attribute", 
 	// Second chunk should reopen with the language attribute preserved
 	expect(chunks[1]).toStartWith('<pre><code class="language-js">');
 });
+
+// --- Horizontal rule (<hr> is NOT a Telegram-allowed tag) ---
+// Regression: emitting <hr> makes Telegram reject the message (400) and the
+// bridge silently falls back to plain text, killing formatting for the whole
+// reply. A rule must become a plain-text separator instead.
+
+test("markdownToTelegramHtml renders --- as a text separator, not <hr>", () => {
+	const out = markdownToTelegramHtml("Above\n\n---\n\nBelow");
+	expect(out).not.toContain("<hr");
+	expect(out).toContain("──────────");
+	expect(out).toContain("Above");
+	expect(out).toContain("Below");
+});
+
+test("markdownToTelegramHtml renders *** rule as a text separator", () => {
+	expect(markdownToTelegramHtml("A\n\n***\n\nB")).not.toContain("<hr");
+});
+
+// --- Tag safety guard: every construct must yield only Telegram-allowed tags ---
+// Telegram's HTML mode allows a fixed whitelist; any other tag triggers a 400.
+// This guard catches a renderer change that introduces an unsupported tag.
+
+test("markdownToTelegramHtml only emits Telegram-allowed HTML tags", () => {
+	const allowed = new Set([
+		"b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+		"a", "code", "pre", "blockquote", "tg-spoiler", "tg-emoji", "span",
+	]);
+	const kitchenSink = [
+		"# Heading",
+		"",
+		"**bold** and *italic* and `inline code`.",
+		"",
+		"```js",
+		"const x = 1;",
+		"```",
+		"",
+		"> a block quote",
+		"",
+		"---",
+		"",
+		"| Name | Age |",
+		"|------|-----|",
+		"| Alice | 30 |",
+		"",
+		"- bullet one",
+		"- bullet two",
+		"",
+		"[a link](https://example.com)",
+	].join("\n");
+	const html = markdownToTelegramHtml(kitchenSink);
+	const usedTags = [...new Set([...html.matchAll(/<\/?([a-zA-Z0-9-]+)/g)].map((m) => m[1]!))];
+	const disallowed = usedTags.filter((t) => !allowed.has(t));
+	expect(disallowed).toEqual([]);
+});

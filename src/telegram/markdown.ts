@@ -48,6 +48,12 @@ export function markdownToTelegramHtml(markdown: string): string {
 			const content = stripBold(this.parser.parseInline(token.tokens));
 			return `<b>${content}</b>\n\n`;
 		},
+		// Telegram HTML has no <hr>; emitting one makes Telegram reject the whole
+		// message (400) and the bridge falls back to plain text. Render a visual
+		// separator with a line of box-drawing characters instead.
+		hr(): string {
+			return "──────────\n\n";
+		},
 		list(this: any, token: { ordered: boolean; items: any[] }): string {
 			listContext = { ordered: token.ordered, index: 0 };
 			const items = token.items.map((item: any) => {
