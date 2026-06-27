@@ -1,0 +1,59 @@
+{
+  "name": "@jetmiky/pigram",
+  "version": "0.1.0",
+  "description": "Clean, session-local Telegram bridge for the pi coding agent — chat with pi from your phone with rich text, streaming previews, file attachments, and native inline-keyboard dialogs.",
+  "type": "module",
+  "license": "MIT",
+  "author": "jetmiky",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "telegram",
+    "bot",
+    "extension",
+    "coding-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jetmiky/pigram.git"
+  },
+  "homepage": "https://github.com/jetmiky/pigram#readme",
+  "bugs": {
+    "url": "https://github.com/jetmiky/pigram/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --target node --format esm --outdir dist && tsc --emitDeclarationOnly",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "marked": "15.0.12"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "^0.80.0",
+    "@earendil-works/pi-agent-core": "^0.80.0",
+    "@earendil-works/pi-coding-agent": "^0.80.0",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@types/node": "^22.0.0",
+    "husky": "^9.0.0",
+    "typescript": "^5.5.0"
+  }
+}
