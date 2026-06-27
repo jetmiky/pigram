@@ -26,7 +26,7 @@ import { DEFAULT_UX, type PigramConfig } from "./config/schema.js";
 import { createHttpTransport, type TelegramTransport, type TelegramUpdate } from "./telegram/transport.js";
 import { TelegramPoller } from "./telegram/poller.js";
 import { DialogManager } from "./telegram/dialog.js";
-import { markdownToTelegramHtml, chunkTelegramHtml } from "./telegram/markdown.js";
+import { markdownToTelegramHtml, chunkTelegramHtml, escapeTelegramHtml } from "./telegram/markdown.js";
 import { decidePairing, applyPairing, type PairingState } from "./domain/pairing.js";
 import {
 	parseCommand,
@@ -105,23 +105,47 @@ export default function pigram(pi: ExtensionAPI): void {
 	}
 	let cursorCache = 0;
 
-	// --- Outbound reply (rich text aware) ---
-	async function sendReply(chatId: number, text: string): Promise<void> {
+	// --- Outbound senders ---
+	// The bridge emits three distinct kinds of outbound text, and conflating them
+	// is what caused literal "<pre>" / "&lt;" to leak into chat: a sender must
+	// never re-escape text that is already in its final form.
+	//
+	//   sendPlain    — the bridge's own status/ack/error lines. No markup, so it
+	//                  is sent verbatim with no parse mode (emoji are fine here).
+	//   sendHtml     — text the bridge has ALREADY rendered to Telegram HTML
+	//                  (e.g. the /help block with its <pre> and &lt; entities).
+	//                  Sent as-is; converting it again would double-escape it.
+	//   sendMarkdown — pi's assistant output, which is Markdown and must be
+	//                  converted to Telegram HTML (honouring the richText flag).
+
+	/** Send plain text the bridge generated itself. No markup interpretation. */
+	async function sendPlain(chatId: number, text: string): Promise<void> {
+		if (!transport) return;
+		await transport.sendMessage({ chatId, text });
+	}
+
+	/** Send text that is already valid Telegram HTML. Never re-escaped. */
+	async function sendHtml(chatId: number, html: string): Promise<void> {
+		if (!transport) return;
+		for (const chunk of chunkTelegramHtml(html)) {
+			try {
+				await transport.sendMessage({ chatId, text: chunk, parseMode: "HTML" });
+			} catch {
+				// Fall back to plain text if Telegram rejects the HTML.
+				await transport.sendMessage({ chatId, text: chunk });
+			}
+		}
+	}
+
+	/** Send Markdown from pi's assistant output, converted to Telegram HTML. */
+	async function sendMarkdown(chatId: number, markdown: string): Promise<void> {
 		if (!transport) return;
 		const richText = config?.ux?.richText ?? DEFAULT_UX.richText;
-		if (richText) {
-			const html = markdownToTelegramHtml(text);
-			for (const chunk of chunkTelegramHtml(html)) {
-				try {
-					await transport.sendMessage({ chatId, text: chunk, parseMode: "HTML" });
-				} catch {
-					// Fall back to plain text if HTML parsing fails on Telegram's side.
-					await transport.sendMessage({ chatId, text: chunk });
-				}
-			}
-		} else {
-			await transport.sendMessage({ chatId, text });
+		if (!richText) {
+			await sendPlain(chatId, markdown);
+			return;
 		}
+		await sendHtml(chatId, markdownToTelegramHtml(markdown));
 	}
 
 	// --- Command handling (maps parsed intents to session/bridge actions) ---
@@ -132,18 +156,20 @@ export default function pigram(pi: ExtensionAPI): void {
 		switch (parsed.kind) {
 			case "start":
 			case "help": {
-				await sendReply(chatId, formatHelpReply({ includeBotFatherCommands: true }));
+				await sendHtml(chatId, formatHelpReply({ includeBotFatherCommands: true }));
 				return true;
 			}
 			case "status": {
 				const s = session.getStatus();
+				const model = `${s.provider ? `${s.provider}/` : ""}${s.modelId ?? "unknown"}`;
 				const lines = [
-					`model: ${s.provider ? `${s.provider}/` : ""}${s.modelId ?? "unknown"}`,
-					`thinking: ${s.thinkingLevel}`,
-					`state: ${s.busy ? "busy" : "idle"}`,
-					`queued: ${followUps.size}`,
+					"📊 <b>Session status</b>",
+					`🤖 Model: ${escapeTelegramHtml(model)}`,
+					`🧠 Thinking: ${escapeTelegramHtml(s.thinkingLevel)}`,
+					`${s.busy ? "⏳" : "✅"} State: ${s.busy ? "busy" : "idle"}`,
+					`📥 Queued: ${followUps.size}`,
 				];
-				await sendReply(chatId, lines.join("\n"));
+				await sendHtml(chatId, lines.join("\n"));
 				return true;
 			}
 			case "model": {
@@ -154,48 +180,48 @@ export default function pigram(pi: ExtensionAPI): void {
 						if (level) session.setThinkingLevel(level);
 					}
 					const s = session.getStatus();
-					await sendReply(chatId, `active model: ${s.provider ? `${s.provider}/` : ""}${s.modelId ?? parsed.model}; thinking: ${s.thinkingLevel}`);
+					await sendPlain(chatId, `✅ Active model: ${s.provider ? `${s.provider}/` : ""}${s.modelId ?? parsed.model} · thinking: ${s.thinkingLevel}`);
 				} catch (err) {
-					await sendReply(chatId, err instanceof Error ? err.message : String(err));
+					await sendPlain(chatId, `⚠️ ${err instanceof Error ? err.message : String(err)}`);
 				}
 				return true;
 			}
 			case "thinking": {
 				const level = asThinkingLevel(parsed.level);
 				if (!level) {
-					await sendReply(chatId, `invalid thinking level: ${parsed.level}`);
+					await sendPlain(chatId, `⚠️ Invalid thinking level: ${parsed.level}`);
 					return true;
 				}
 				session.setThinkingLevel(level);
-				await sendReply(chatId, `thinking: ${session.getStatus().thinkingLevel}`);
+				await sendPlain(chatId, `🧠 Thinking: ${session.getStatus().thinkingLevel}`);
 				return true;
 			}
 			case "compact": {
 				await session.compact();
-				await sendReply(chatId, "compaction triggered");
+				await sendPlain(chatId, "🗜️ Compaction triggered");
 				return true;
 			}
 			case "stop": {
 				await session.abort();
-				await sendReply(chatId, "aborted");
+				await sendPlain(chatId, "🛑 Aborted");
 				return true;
 			}
 			case "new": {
 				const result = await session.newSession(parsed.name);
-				await sendReply(chatId, result.cancelled ? "new session cancelled" : "started a fresh pi session");
+				await sendPlain(chatId, result.cancelled ? "New session cancelled" : "🆕 Started a fresh pi session");
 				return true;
 			}
 			case "resend": {
-				await sendReply(chatId, "resend is not available in this build");
+				await sendPlain(chatId, "Resend is not available in this build");
 				return true;
 			}
 			case "git": {
-				await sendReply(chatId, parsed.git.ok ? `git ${parsed.git.kind}` : parsed.git.message);
+				await sendPlain(chatId, parsed.git.ok ? `git ${parsed.git.kind}` : parsed.git.message);
 				return true;
 			}
 			case "unknown":
 			default: {
-				await sendReply(chatId, UNKNOWN_COMMAND_MESSAGE);
+				await sendPlain(chatId, UNKNOWN_COMMAND_MESSAGE);
 				return true;
 			}
 		}
@@ -206,13 +232,13 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Pairing gate.
 		const decision = decidePairing(pairing, userId);
 		if (decision.kind === "reject") {
-			await sendReply(chatId, "This bot is paired with another user.");
+			await sendPlain(chatId, "🔒 This bot is paired with another user.");
 			return;
 		}
 		if (decision.kind === "pair") {
 			pairing = applyPairing(pairing, decision);
 			await persistPairing();
-			await sendReply(chatId, "Telegram bridge paired with this account.");
+			await sendPlain(chatId, "🔗 Telegram bridge paired with this account.");
 		}
 		activeChatId = chatId;
 

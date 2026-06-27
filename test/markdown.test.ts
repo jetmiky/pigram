@@ -21,6 +21,20 @@ test("markdownToTelegramHtml escapes content in inline code", () => {
 	expect(markdownToTelegramHtml("`<div>&test</div>`")).toBe("<code>&lt;div&gt;&amp;test&lt;/div&gt;</code>");
 });
 
+// Regression guard for the double-escape bug: feeding ALREADY-rendered Telegram
+// HTML back through the converter escapes its tags into literal text
+// (<pre> -> &lt;pre&gt;, &lt; -> &amp;lt;). This is why the bridge must route
+// pre-formatted HTML (e.g. the /help block) through a verbatim sender and only
+// ever run pi's raw Markdown through this function. See src/index.ts senders.
+test("markdownToTelegramHtml double-escapes pre-rendered HTML (must not be called twice)", () => {
+	const alreadyHtml = "<pre>new - start a session\ngit - run /git &lt;status&gt;</pre>";
+	const result = markdownToTelegramHtml(alreadyHtml);
+	expect(result).toContain("&lt;pre&gt;");
+	expect(result).toContain("&amp;lt;");
+	// Proves the converter is NOT safe to apply to its own output.
+	expect(result).not.toBe(alreadyHtml);
+});
+
 test("markdownToTelegramHtml converts fenced code block with language", () => {
 	const markdown = "```js\nconst x = 1;\n```";
 	const expected = '<pre><code class="language-js">const x = 1;\n</code></pre>';
