@@ -38,6 +38,7 @@ import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/
 import { bindPiSession } from "./pi/session-binding.js";
 import type { ThinkingLevel } from "./pi/session.js";
 import { AttachmentQueue, flushAttachments, buildAttachToolParams, executeAttach } from "./pi/attach.js";
+import { extractAssistantText, type AgentMessageLike } from "./pi/assistant-text.js";
 
 export const PIGRAM_VERSION = "0.1.0";
 
@@ -64,7 +65,12 @@ export default function pigram(pi: ExtensionAPI): void {
 	let abortController: AbortController | undefined;
 	let pollingActive = false;
 	let activeChatId: number | undefined;
-	let processing = false;
+	// A Telegram-originated turn is "in flight" from the moment we submit the
+	// prompt to pi until pi fires `agent_end`. pi.sendUserMessage only SUBMITS;
+	// it does not await the turn, so we cannot use a try/finally around the
+	// submit call to know when the reply is ready. Instead we track the active
+	// turn here and clear it in the agent_end handler.
+	let activeTurn: { chatId: number } | undefined;
 
 	const followUps = new FollowUpQueue();
 	const attachments = new AttachmentQueue();
@@ -248,8 +254,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Slash command?
 		if (msg.text && (await handleCommand(chatId, msg.text))) return;
 
-		// Otherwise forward to pi as a prompt (queue if busy).
-		if (processing) {
+		// Otherwise forward to pi as a prompt (queue if a turn is in flight).
+		if (activeTurn) {
 			followUps.enqueue(msg);
 			return;
 		}
@@ -257,16 +263,15 @@ export default function pigram(pi: ExtensionAPI): void {
 	}
 
 	async function deliverPrompt(chatId: number, msg: InboundMessage): Promise<void> {
-		processing = true;
-		try {
-			const mapped = mapInboundMessage(msg);
-			await session.sendPrompt(mapped.text, mapped.imagePaths);
-		} finally {
-			processing = false;
-		}
-		// Drain any follow-ups queued while busy.
-		const next = followUps.dequeue();
-		if (next) await deliverPrompt(chatId, next);
+		// Mark the turn in flight BEFORE submitting. pi.sendUserMessage returns
+		// immediately; the reply arrives later via agent_end.
+		activeTurn = { chatId };
+		// A typing indicator gives the user liveness feedback while pi works.
+		// (Token-by-token streaming previews are deferred: doing them safely
+		// needs throttling + HTML-safe partials; see streaming.ts.)
+		void transport?.sendChatAction({ chatId, action: "typing" }).catch(() => undefined);
+		const mapped = mapInboundMessage(msg);
+		await session.sendPrompt(mapped.text, mapped.imagePaths);
 	}
 
 	async function onUpdate(update: TelegramUpdate): Promise<void> {
@@ -434,6 +439,37 @@ export default function pigram(pi: ExtensionAPI): void {
 				dialog = new DialogManager({ transport, chatId: activeChatId });
 			}
 		}
+	});
+
+	// --- Assistant reply forwarding ---
+	// pi drives an asynchronous turn after pi.sendUserMessage. We mirror its
+	// progress back to Telegram: message_update streams a live preview, and
+	// agent_end delivers the final reply and releases the turn so queued
+	// follow-ups can run.
+
+	pi.on("agent_end", async (event) => {
+		const turn = activeTurn;
+		if (!turn) return;
+		activeTurn = undefined;
+
+		const outcome = extractAssistantText(event.messages as AgentMessageLike[]);
+
+		if (outcome.stopReason === "aborted") {
+			// User asked to stop; the /stop ack already covers it.
+		} else if (outcome.stopReason === "error") {
+			await sendPlain(turn.chatId, `⚠️ ${outcome.errorMessage ?? "pi failed while processing the request."}`);
+		} else if (outcome.text) {
+			await sendMarkdown(turn.chatId, outcome.text);
+		}
+
+		// Flush any attachments the assistant queued during the turn.
+		if (transport) {
+			await flushAttachments(attachments, transport, turn.chatId).catch(() => undefined);
+		}
+
+		// Drain one queued follow-up, if any, starting a fresh turn.
+		const next = followUps.dequeue();
+		if (next) await deliverPrompt(turn.chatId, next);
 	});
 }
 
