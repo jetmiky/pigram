@@ -380,6 +380,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		promptSnippet: "Queue local files to be sent with the next Telegram reply.",
 		promptGuidelines: [
 			"When replying to a [telegram] message and the user asked for a file or generated artifact, call telegram_attach with the local path instead of only mentioning it in text.",
+			"Create or write the file BEFORE calling telegram_attach. The tool reads the file immediately and fails with ENOENT if the path does not yet exist.",
+			"Pass paths relative to the current working directory (or absolute paths). Do not attach a file you have only described but not yet written.",
 		],
 		parameters: buildAttachToolParams(),
 		async execute(_toolCallId, params) {
