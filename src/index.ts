@@ -38,7 +38,8 @@ import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/
 import { bindPiSession } from "./pi/session-binding.js";
 import type { ThinkingLevel } from "./pi/session.js";
 import { AttachmentQueue, flushAttachments, buildAttachToolParams, executeAttach } from "./pi/attach.js";
-import { extractAssistantText, type AgentMessageLike } from "./pi/assistant-text.js";
+import { extractAssistantText, getAgentMessageText, type AgentMessageLike } from "./pi/assistant-text.js";
+import { PreviewSession } from "./telegram/preview.js";
 
 export const PIGRAM_VERSION = "0.1.0";
 
@@ -69,8 +70,9 @@ export default function pigram(pi: ExtensionAPI): void {
 	// prompt to pi until pi fires `agent_end`. pi.sendUserMessage only SUBMITS;
 	// it does not await the turn, so we cannot use a try/finally around the
 	// submit call to know when the reply is ready. Instead we track the active
-	// turn here and clear it in the agent_end handler.
-	let activeTurn: { chatId: number } | undefined;
+	// turn here and clear it in the agent_end handler. When stream previews are
+	// enabled the turn also carries a PreviewSession that owns the live bubble.
+	let activeTurn: { chatId: number; preview?: PreviewSession } | undefined;
 
 	const followUps = new FollowUpQueue();
 	const attachments = new AttachmentQueue();
@@ -264,11 +266,19 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	async function deliverPrompt(chatId: number, msg: InboundMessage): Promise<void> {
 		// Mark the turn in flight BEFORE submitting. pi.sendUserMessage returns
-		// immediately; the reply arrives later via agent_end.
-		activeTurn = { chatId };
-		// A typing indicator gives the user liveness feedback while pi works.
-		// (Token-by-token streaming previews are deferred: doing them safely
-		// needs throttling + HTML-safe partials; see streaming.ts.)
+		// immediately; the reply arrives later via message_update / agent_end.
+		const streamPreviews = config?.ux?.streamPreviews ?? DEFAULT_UX.streamPreviews;
+		const richText = config?.ux?.richText ?? DEFAULT_UX.richText;
+		// Previews only make sense when both rich text and previews are on and we
+		// have a transport: the preview streams plain partials then finalizes to
+		// rich HTML on the same message.
+		const preview =
+			streamPreviews && richText && transport
+				? new PreviewSession(chatId, { transport })
+				: undefined;
+		activeTurn = { chatId, ...(preview ? { preview } : {}) };
+		// A typing indicator gives the user liveness feedback while pi works
+		// (and covers the gap before the first streamed token arrives).
 		void transport?.sendChatAction({ chatId, action: "typing" }).catch(() => undefined);
 		const mapped = mapInboundMessage(msg);
 		await session.sendPrompt(mapped.text, mapped.imagePaths);
@@ -447,6 +457,17 @@ export default function pigram(pi: ExtensionAPI): void {
 	// agent_end delivers the final reply and releases the turn so queued
 	// follow-ups can run.
 
+	pi.on("message_update", async (event) => {
+		const turn = activeTurn;
+		if (!turn?.preview) return;
+		const message = event.message as AgentMessageLike;
+		if (message?.role !== "assistant") return;
+		const partial = getAgentMessageText(message);
+		if (!partial) return;
+		// Previews are best-effort; PreviewSession swallows transport errors.
+		await turn.preview.update(partial);
+	});
+
 	pi.on("agent_end", async (event) => {
 		const turn = activeTurn;
 		if (!turn) return;
@@ -459,7 +480,13 @@ export default function pigram(pi: ExtensionAPI): void {
 		} else if (outcome.stopReason === "error") {
 			await sendPlain(turn.chatId, `⚠️ ${outcome.errorMessage ?? "pi failed while processing the request."}`);
 		} else if (outcome.text) {
-			await sendMarkdown(turn.chatId, outcome.text);
+			// With a preview, finalize edits the live bubble in place to the rich
+			// reply (no duplicate message). Without one, send the reply directly.
+			if (turn.preview) {
+				await turn.preview.finalize(outcome.text);
+			} else {
+				await sendMarkdown(turn.chatId, outcome.text);
+			}
 		}
 
 		// Flush any attachments the assistant queued during the turn.
