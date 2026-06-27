@@ -153,7 +153,10 @@ export function parseCommand(text: string): ParsedCommand | null {
 
 	// Split into tokens for parsing
 	const tokens = trimmed.split(/\s+/);
-	const command = tokens[0];
+	// Telegram appends "@botusername" to commands in group chats (e.g.
+	// "/new@my_bot"). Strip it so the command matches regardless of context.
+	// Args (tokens[1...]) are preserved with their original casing.
+	const command = tokens[0]!.split("@", 1)[0];
 
 	switch (command) {
 		case "/new": {

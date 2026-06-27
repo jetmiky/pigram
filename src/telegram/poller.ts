@@ -46,6 +46,16 @@ export interface PollerDeps {
 	 * Defaults to 0 (useful for fast tests).
 	 */
 	errorDelayMs?: number;
+
+	/**
+	 * Delay in milliseconds after a Telegram 409 "Conflict: terminated by other
+	 * getUpdates request" error. This conflict means another poller is (or was)
+	 * consuming updates for the same bot — typically a previous session's poll
+	 * that has not yet wound down (e.g. right after /new). A longer backoff than
+	 * a normal error gives the competing consumer time to terminate Telegram-side
+	 * instead of two pollers ping-ponging 409s at each other. Defaults to 3000.
+	 */
+	conflictDelayMs?: number;
 }
 
 /**
@@ -60,6 +70,7 @@ export class TelegramPoller {
 	private readonly pollTimeoutSeconds: number;
 	private readonly onError: ((err: unknown) => void) | undefined;
 	private readonly errorDelayMs: number;
+	private readonly conflictDelayMs: number;
 
 	constructor(deps: PollerDeps) {
 		this.transport = deps.transport;
@@ -69,6 +80,7 @@ export class TelegramPoller {
 		this.pollTimeoutSeconds = deps.pollTimeoutSeconds ?? 30;
 		this.onError = deps.onError;
 		this.errorDelayMs = deps.errorDelayMs ?? 0;
+		this.conflictDelayMs = deps.conflictDelayMs ?? 3000;
 	}
 
 	/**
@@ -94,8 +106,18 @@ export class TelegramPoller {
 						return;
 					}
 
-					await this.handler(update);
+					// Persist the cursor BEFORE dispatching the handler, not
+					// after. A handler may tear down this very poller mid-flight
+					// — most notably /new, which calls newSession() and rebuilds
+					// the extension runtime while we are still awaiting the
+					// handler. If we advanced the cursor only afterwards, that
+					// teardown would skip the persist, the replacement session
+					// would restore the stale cursor, and Telegram would
+					// re-deliver the same update (a phantom second /new). Saving
+					// first gives at-most-once delivery, which is the correct
+					// trade-off for commands that must never double-fire.
 					await this.setCursor(update.update_id);
+					await this.handler(update);
 				}
 			} catch (err) {
 				// If the error is due to abort, exit cleanly
@@ -108,9 +130,13 @@ export class TelegramPoller {
 					this.onError(err);
 				}
 
-				// Optional delay before retrying (0 in tests for speed)
-				if (this.errorDelayMs > 0) {
-					await this.sleep(this.errorDelayMs);
+				// A 409 conflict means another poller holds this bot's getUpdates
+				// (e.g. a previous session winding down after /new). Back off
+				// longer so it can terminate, instead of racing it. Other errors
+				// use the normal short delay.
+				const delay = this.isConflictError(err) ? this.conflictDelayMs : this.errorDelayMs;
+				if (delay > 0) {
+					await this.sleep(delay);
 				}
 			}
 		}
@@ -124,6 +150,17 @@ export class TelegramPoller {
 			err instanceof Error &&
 			(err.name === "AbortError" || err.message.includes("aborted"))
 		);
+	}
+
+	/**
+	 * Check if an error is Telegram's 409 getUpdates conflict.
+	 * Telegram phrases it "Conflict: terminated by other getUpdates request";
+	 * we match the stable "Conflict" + "getUpdates" signal case-insensitively.
+	 */
+	private isConflictError(err: unknown): boolean {
+		if (!(err instanceof Error)) return false;
+		const msg = err.message.toLowerCase();
+		return msg.includes("conflict") && msg.includes("getupdates");
 	}
 
 	/**

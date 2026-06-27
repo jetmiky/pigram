@@ -23,7 +23,6 @@ export interface AgentSessionPort {
 	compact(): Promise<void>;
 	abort(): Promise<void>;
 	sendPrompt(text: string, imagePaths?: string[]): Promise<void>;
-	newSession(name?: string): Promise<{ cancelled: boolean }>;
 }
 
 /**
@@ -42,7 +41,6 @@ export interface PiSessionDriver {
 		abort(): Promise<void>;
 		prompt(text: string, options?: { images?: string[] }): Promise<void>;
 	};
-	newSession(options?: { name?: string }): Promise<{ cancelled: boolean }>;
 }
 
 /**
@@ -81,11 +79,6 @@ export function createAgentSession(driver: PiSessionDriver): AgentSessionPort {
 		async sendPrompt(text: string, imagePaths?: string[]): Promise<void> {
 			const options = imagePaths?.length ? { images: imagePaths } : undefined;
 			await driver.session.prompt(text, options);
-		},
-
-		async newSession(name?: string): Promise<{ cancelled: boolean }> {
-			const options = name ? { name } : undefined;
-			return driver.newSession(options);
 		},
 	};
 }

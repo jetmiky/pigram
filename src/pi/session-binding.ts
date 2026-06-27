@@ -14,15 +14,21 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionPort, SessionStatus, ThinkingLevel } from "./session.js";
 
 /**
- * Returns the latest ExtensionCommandContext, if any. Pi hands a fresh context
- * to each command handler; the bridge stores the most recent one so session
- * operations act on the live session.
+ * Returns the latest pi event context, if any. Pi hands a context to every
+ * event handler; the bridge stores the most recent so session operations act
+ * on the live session.
+ *
+ * NOTE: this is the plain ExtensionContext (event context), NOT the
+ * ExtensionCommandContext. Session-replacement methods (newSession, fork,
+ * waitForIdle) exist only on the command context and are intentionally NOT
+ * used here — those are handled in the composition root with a context
+ * captured from an actual command handler.
  */
-export type CommandContextGetter = () => ExtensionCommandContext | undefined;
+export type CommandContextGetter = () => ExtensionContext | undefined;
 
 const MIME_BY_EXT: Record<string, string> = {
 	".jpg": "image/jpeg",
@@ -52,7 +58,7 @@ async function toImageContent(path: string): Promise<ImageContent> {
  * @param getCtx - returns the latest ExtensionCommandContext, if any
  */
 export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): AgentSessionPort {
-	function requireCtx(): ExtensionCommandContext {
+	function requireCtx(): ExtensionContext {
 		const ctx = getCtx();
 		if (!ctx) throw new Error("No active pi session context");
 		return ctx;
@@ -89,7 +95,13 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 
 		async compact(): Promise<void> {
 			const ctx = requireCtx();
-			await ctx.waitForIdle();
+			// waitForIdle() is command-context-only; the event context exposes a
+			// synchronous isIdle() instead. Compaction during streaming is
+			// rejected by pi anyway, so we surface a clear error rather than
+			// silently no-op.
+			if (!ctx.isIdle()) {
+				throw new Error("Cannot compact while pi is busy — send /stop first.");
+			}
 			// ctx.compact() triggers compaction without awaiting completion.
 			ctx.compact();
 		},
@@ -107,15 +119,6 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 			} else {
 				pi.sendUserMessage(text);
 			}
-		},
-
-		async newSession(name?: string): Promise<{ cancelled: boolean }> {
-			const ctx = requireCtx();
-			const result = await ctx.newSession();
-			if (!result.cancelled && name) {
-				pi.setSessionName(name);
-			}
-			return result;
 		},
 	};
 }

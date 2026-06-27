@@ -24,6 +24,18 @@ describe("parseCommand", () => {
 		expect(parseCommand("/new my-session")).toEqual({ kind: "new", name: "my-session" });
 	});
 
+	test("strips @botusername suffix from commands (group-chat form)", () => {
+		// In group chats Telegram appends the bot username to the command.
+		expect(parseCommand("/new@my_bot")).toEqual({ kind: "new" });
+		expect(parseCommand("/status@my_bot")).toEqual({ kind: "status" });
+		expect(parseCommand("/stop@SomeBot")).toEqual({ kind: "stop" });
+	});
+
+	test("strips @botusername but keeps trailing args", () => {
+		expect(parseCommand("/new@my_bot mysession")).toEqual({ kind: "new", name: "mysession" });
+		expect(parseCommand("/model@my_bot openai/gpt-5")).toEqual({ kind: "model", model: "openai/gpt-5" });
+	});
+
 	test("parses /status", () => {
 		expect(parseCommand("/status")).toEqual({ kind: "status" });
 	});

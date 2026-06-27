@@ -9,7 +9,8 @@
  * loses only the wiring, not any logic".
  */
 import { homedir } from "node:os";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
 	resolveScope,
@@ -35,6 +36,14 @@ import {
 	UNKNOWN_COMMAND_MESSAGE,
 } from "./domain/commands.js";
 import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
+import {
+	findPendingReconnectRequest,
+	formatNewSessionConfirmation,
+	RECONNECT_CONSUMED_ENTRY_TYPE,
+	RECONNECT_REQUEST_ENTRY_TYPE,
+	type ReconnectConsumed,
+	type ReconnectRequest,
+} from "./domain/reconnect.js";
 import { bindPiSession } from "./pi/session-binding.js";
 import type { ThinkingLevel } from "./pi/session.js";
 import { AttachmentQueue, flushAttachments, buildAttachToolParams, executeAttach } from "./pi/attach.js";
@@ -45,6 +54,9 @@ export const PIGRAM_VERSION = "0.1.0";
 
 const POLL_ERROR_BACKOFF_MS = 1000;
 const POLL_TIMEOUT_SECONDS = 30;
+// A 409 getUpdates conflict (another poller is winding down, e.g. after /new)
+// needs a longer pause so the competing consumer can terminate Telegram-side.
+const POLL_CONFLICT_BACKOFF_MS = 3000;
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
@@ -76,7 +88,15 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	const followUps = new FollowUpQueue();
 	const attachments = new AttachmentQueue();
-	let latestCtx: ExtensionCommandContext | undefined;
+	// The plain event context, refreshed on every event/command. Safe for status,
+	// model, abort, compact — but NOT session replacement.
+	let latestCtx: ExtensionContext | undefined;
+	// A command-capable context, captured ONLY from real command handlers
+	// (pigram-setup/connect/etc). newSession/fork/withSession live only here.
+	// May be undefined when the bridge auto-started from session_start and the
+	// user has not yet run any pigram-* command in the pi terminal — in that
+	// case /new from Telegram cannot reset the session and says so.
+	let latestCommandCtx: ExtensionCommandContext | undefined;
 	const session = bindPiSession(pi, () => latestCtx);
 
 	// --- Config + State persistence ---
@@ -215,8 +235,15 @@ export default function pigram(pi: ExtensionAPI): void {
 				return true;
 			}
 			case "new": {
-				const result = await session.newSession(parsed.name);
-				await sendPlain(chatId, result.cancelled ? "New session cancelled" : "🆕 Started a fresh pi session");
+				// Make /new safe even mid-generation: abort any in-flight turn
+				// and drop queued follow-ups before resetting, so the new session
+				// starts clean and no stale reply lands in it.
+				if (activeTurn) {
+					await session.abort();
+					activeTurn = undefined;
+				}
+				followUps.clear();
+				await performNewSession(chatId, parsed.name);
 				return true;
 			}
 			case "resend": {
@@ -310,6 +337,7 @@ export default function pigram(pi: ExtensionAPI): void {
 			await writeState(paths, state);
 		}
 		abortController = new AbortController();
+		const myController = abortController;
 		pollingActive = true;
 		const poller = new TelegramPoller({
 			transport,
@@ -318,23 +346,103 @@ export default function pigram(pi: ExtensionAPI): void {
 			setCursor: persistCursor,
 			pollTimeoutSeconds: POLL_TIMEOUT_SECONDS,
 			errorDelayMs: POLL_ERROR_BACKOFF_MS,
+			conflictDelayMs: POLL_CONFLICT_BACKOFF_MS,
 			onError: (err) => {
 				latestCtx?.ui.setStatus("pigram", `error: ${err instanceof Error ? err.message : String(err)}`);
 			},
 		});
-		void poller.start(abortController.signal).finally(() => {
-			pollingActive = false;
+		void poller.start(myController.signal).finally(() => {
+			// Only clear the flag if WE are still the active poller. After a
+			// /new, a replacement poller may already own pollingActive; an old
+			// poller's late completion must not clear it and invite a second
+			// concurrent poller (which would 409 against the live one).
+			if (abortController === myController) {
+				pollingActive = false;
+			}
 		});
 	}
 
 	function stopPolling(): void {
 		abortController?.abort();
+		abortController = undefined;
 		pollingActive = false;
+	}
+
+	/**
+	 * Reset the pi session in response to a Telegram /new.
+	 *
+	 * newSession() lives only on a command context (ExtensionCommandContext),
+	 * which pi hands to registered command handlers — never to event handlers.
+	 * A bridge that auto-started from session_start may not hold one yet, so we
+	 * degrade gracefully and tell the user how to enable /new.
+	 *
+	 * When we DO have a command context, we do NOT try to reconnect inline.
+	 * newSession() tears down this runtime and builds a fresh one for the
+	 * replacement session; any poller/transport/ctx we touch here belongs to
+	 * the dying runtime. Reconnecting in withSession races the replacement
+	 * session's own session_start (two pollers, one getUpdates slot → 409 →
+	 * silent bridge). Instead we hand the reconnect across the boundary as
+	 * DATA: persist a reconnect-request entry into the new session via setup,
+	 * then let the new session's session_start find it and reconnect there.
+	 */
+	async function performNewSession(chatId: number, name?: string): Promise<void> {
+		const cmdCtx = latestCommandCtx;
+		if (!cmdCtx) {
+			await sendPlain(
+				chatId,
+				"⚠️ Can't start a new session from Telegram in this run. Run /pigram-connect in the pi terminal once, then /new will work. (You can also start a fresh session directly in the terminal.)",
+			);
+			return;
+		}
+		if (activeTurn) {
+			// Defensive: caller already aborts, but never reset mid-turn.
+			await sendPlain(chatId, "⚠️ pi is busy; send /stop first, then /new.");
+			return;
+		}
+
+		const request: ReconnectRequest = {
+			requestId: randomUUID(),
+			chatId,
+			...(name ? { sessionName: name } : {}),
+		};
+
+		try {
+			const parentSession = cmdCtx.sessionManager.getSessionFile();
+			const result = await cmdCtx.newSession({
+				...(parentSession ? { parentSession } : {}),
+				setup: async (sessionManager) => {
+					// Runs against the NEW session's manager, before its
+					// session_start fires. Persist the reconnect request (and
+					// optional name) so the new runtime knows to reconnect.
+					if (request.sessionName) sessionManager.appendSessionInfo(request.sessionName);
+					sessionManager.appendCustomEntry(RECONNECT_REQUEST_ENTRY_TYPE, request);
+				},
+				withSession: async (nextCtx) => {
+					// The replacement session's command context. Capture it so a
+					// subsequent /new works too. Do NOT start polling here — the
+					// new session's session_start owns that, keyed on the entry
+					// we just persisted.
+					latestCommandCtx = nextCtx;
+					latestCtx = nextCtx;
+				},
+			});
+			if (result.cancelled) {
+				await sendPlain(chatId, "New session cancelled");
+			}
+			// On success we stay silent here: the new session's session_start
+			// sends the confirmation once it has reconnected to Telegram.
+		} catch (err) {
+			await sendPlain(
+				chatId,
+				`⚠️ Couldn't start a new session: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
 	}
 
 	// --- One-step setup ---
 	async function runSetup(ctx: ExtensionCommandContext, scope?: Scope): Promise<void> {
 		latestCtx = ctx;
+		latestCommandCtx = ctx;
 		await loadConfig(ctx.cwd, scope);
 		if (!paths) return;
 
@@ -381,6 +489,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		description: "Start the Pigram bridge in this pi session",
 		handler: async (args, ctx) => {
 			latestCtx = ctx;
+			latestCommandCtx = ctx;
 			const scope = parseScopeArg(args);
 			await loadConfig(ctx.cwd, scope);
 			if (!config?.botToken) {
@@ -395,6 +504,8 @@ export default function pigram(pi: ExtensionAPI): void {
 	pi.registerCommand("pigram-disconnect", {
 		description: "Stop the Pigram bridge in this pi session",
 		handler: async (_args, ctx) => {
+			latestCtx = ctx;
+			latestCommandCtx = ctx;
 			stopPolling();
 			ctx.ui.notify("Pigram bridge disconnected", "info");
 		},
@@ -403,6 +514,8 @@ export default function pigram(pi: ExtensionAPI): void {
 	pi.registerCommand("pigram-status", {
 		description: "Show Pigram bridge status",
 		handler: async (_args, ctx) => {
+			latestCtx = ctx;
+			latestCommandCtx = ctx;
 			const lines = [
 				`config: ${paths?.configPath ?? "not loaded"}`,
 				`scope: ${paths?.scope ?? "n/a"}`,
@@ -441,7 +554,10 @@ export default function pigram(pi: ExtensionAPI): void {
 	// Initialise the dialog manager lazily once a chat is known is handled inside
 	// startPolling via transport; create it here bound to the active chat on first use.
 	pi.on("session_start", async (_event, ctx) => {
-		latestCtx = ctx as unknown as ExtensionCommandContext;
+		// Event handlers receive the plain ExtensionContext — store it as such.
+		// newSession/withSession come only from command handlers; /new degrades
+		// gracefully when none has been captured yet.
+		latestCtx = ctx;
 		await loadConfig(ctx.cwd).catch(() => undefined);
 		if (config?.botToken) {
 			await startPolling().catch(() => undefined);
@@ -449,6 +565,37 @@ export default function pigram(pi: ExtensionAPI): void {
 				dialog = new DialogManager({ transport, chatId: activeChatId });
 			}
 		}
+
+		// If this session was created by a Telegram /new, a reconnect-request
+		// entry was persisted into it. Now that polling is up in THIS runtime,
+		// send the confirmation and mark the request consumed so a later
+		// resume/fork of this session never re-fires it.
+		const request = findPendingReconnectRequest(ctx.sessionManager.getEntries());
+		if (request) {
+			try {
+				if (transport) {
+					await sendPlain(request.chatId, formatNewSessionConfirmation(request));
+				}
+				pi.appendEntry(RECONNECT_CONSUMED_ENTRY_TYPE, {
+					requestId: request.requestId,
+				} satisfies ReconnectConsumed);
+			} catch (err) {
+				ctx.ui.setStatus("pigram", `reconnect after /new failed: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+	});
+
+	// When pi replaces the session (/new, resume, fork) or shuts down, it tears
+	// down this extension runtime's session binding. Stop our poller so the old
+	// long-poll releases Telegram's getUpdates slot before the replacement
+	// session's session_start fires and starts a new one. stopPolling() flips
+	// pollingActive synchronously, so the subsequent startPolling() is free to
+	// run; any brief overlap surfaces as a 409 the poller now backs off from.
+	pi.on("session_shutdown", async () => {
+		stopPolling();
+		// Abandon any in-flight turn state from the old session.
+		activeTurn = undefined;
+		followUps.clear();
 	});
 
 	// --- Assistant reply forwarding ---

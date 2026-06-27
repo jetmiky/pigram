@@ -38,10 +38,6 @@ function createFakeDriver(state: FakeSessionState): PiSessionDriver {
 				state.calls.push({ method: "session.prompt", args: [text, options] });
 			},
 		},
-		newSession: async (options?: { name?: string }) => {
-			state.calls.push({ method: "newSession", args: [options] });
-			return { cancelled: false };
-		},
 	};
 }
 
@@ -216,57 +212,5 @@ describe("AgentSession adapter", () => {
 			},
 		]);
 	});
-
-	test("newSession with name forwards options with name", async () => {
-		const state: FakeSessionState = {
-			isProcessing: false,
-			thinkingLevel: "minimal",
-			calls: [],
-		};
-		const driver = createFakeDriver(state);
-		const session = createAgentSession(driver);
-
-		const result = await session.newSession("my-project");
-
-		expect(state.calls).toEqual([
-			{ method: "newSession", args: [{ name: "my-project" }] },
-		]);
-		expect(result.cancelled).toBe(false);
-	});
-
-	test("newSession without name forwards undefined options", async () => {
-		const state: FakeSessionState = {
-			isProcessing: false,
-			thinkingLevel: "off",
-			calls: [],
-		};
-		const driver = createFakeDriver(state);
-		const session = createAgentSession(driver);
-
-		const result = await session.newSession();
-
-		expect(state.calls).toEqual([
-			{ method: "newSession", args: [undefined] },
-		]);
-		expect(result.cancelled).toBe(false);
-	});
-
-	test("newSession returns cancelled status from driver", async () => {
-		const state: FakeSessionState = {
-			isProcessing: false,
-			thinkingLevel: "low",
-			calls: [],
-		};
-		const driver = createFakeDriver(state);
-		// Override newSession to return cancelled: true
-		driver.newSession = async (options?: { name?: string }) => {
-			state.calls.push({ method: "newSession", args: [options] });
-			return { cancelled: true };
-		};
-		const session = createAgentSession(driver);
-
-		const result = await session.newSession("cancelled-test");
-
-		expect(result.cancelled).toBe(true);
-	});
 });
+
