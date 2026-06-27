@@ -29,6 +29,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "pi": {
     "extensions": [
       "./dist/index.js"
@@ -38,7 +41,7 @@
     "build": "bun build src/index.ts --target node --format esm --outdir dist --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --external @earendil-works/pi-coding-agent --external @sinclair/typebox --external marked && tsc --emitDeclarationOnly",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "marked": "15.0.12"
