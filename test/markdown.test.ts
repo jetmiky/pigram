@@ -81,41 +81,59 @@ test("markdownToTelegramHtml escapes HTML in bold text", () => {
 	expect(markdownToTelegramHtml("**<important> & critical**")).toBe("<b>&lt;important&gt; &amp; critical</b>");
 });
 
-test("markdownToTelegramHtml flattens 2-column tables into labeled bullets", () => {
+test("markdownToTelegramHtml renders tables as an aligned <pre> grid", () => {
 	const markdown = "| Col1 | Col2 |\n|------|------|\n| A    | B    |";
 	const result = markdownToTelegramHtml(markdown);
-	// 2-column rows become "• <b>first</b>: second"
-	expect(result).toContain("\u2022 <b>A</b>: B");
-	// No table HTML tags
+	// Wrapped in <pre> (Telegram's only fixed-width primitive), not a <table>.
+	expect(result).toContain("<pre>");
+	expect(result).toContain("</pre>");
 	expect(result).not.toContain("<table>");
 	expect(result).not.toContain("<tr>");
+	// Header, box-drawing divider, then the data row.
+	expect(result).toContain("Col1");
+	expect(result).toContain("Col2");
+	expect(result).toContain("─");
+	expect(result).toContain("A");
+	expect(result).toContain("B");
 });
 
-test("markdownToTelegramHtml flattens multi-column tables into titled blocks", () => {
+test("markdownToTelegramHtml aligns table columns to the widest cell", () => {
 	const markdown = [
 		"| Dimension | Junior | Senior |",
 		"| --- | --- | --- |",
 		"| Focus | Writes code | Solves the right problem |",
 	].join("\n");
 	const result = markdownToTelegramHtml(markdown);
-	// First column becomes the block title, remaining columns keyed by header
-	expect(result).toContain("<b>Focus</b>");
-	expect(result).toContain("\u2022 Junior: Writes code");
-	expect(result).toContain("\u2022 Senior: Solves the right problem");
+	const inner = result.replace(/^[\s\S]*<pre>/, "").replace(/<\/pre>[\s\S]*$/, "");
+	const lines = inner.split("\n");
+	// header, divider, one data row
+	expect(lines).toHaveLength(3);
+	// First column padded so "Focus" lines up under "Dimension" (9 chars + 2 gap).
+	expect(lines[0]!.indexOf("Junior")).toBe(lines[2]!.indexOf("Writes code"));
+	// Second-column header and value start at the same offset.
+	expect(lines[0]!.indexOf("Junior")).toBe(11);
+});
+
+test("markdownToTelegramHtml escapes HTML entities inside table <pre>", () => {
+	const markdown = "| Name | Expr |\n| --- | --- |\n| cmp | a < b & c |";
+	const result = markdownToTelegramHtml(markdown);
+	expect(result).toContain("a &lt; b &amp; c");
+	expect(result).not.toContain("a < b & c");
+});
+
+test("markdownToTelegramHtml flattens bold in table cells to plain text in <pre>", () => {
+	const markdown = "| Setting | Value |\n| --- | --- |\n| **Timeout** | 30s |";
+	const result = markdownToTelegramHtml(markdown);
+	// Inside <pre> there are no inline tags; bold markers are gone, text stays.
+	expect(result).toContain("Timeout");
+	expect(result).toContain("30s");
+	expect(result).not.toContain("**");
+	expect(result).not.toContain("<b>");
 });
 
 test("markdownToTelegramHtml renders bold inside list items", () => {
 	const result = markdownToTelegramHtml("- A bullet with **bold label** and text");
 	expect(result).toContain("<b>bold label</b>");
-	expect(result).not.toContain("**");
-});
-
-test("markdownToTelegramHtml renders bold inside table cells without nesting", () => {
-	const markdown = "| Setting | Value |\n| --- | --- |\n| **Timeout** | 30s |";
-	const result = markdownToTelegramHtml(markdown);
-	expect(result).toContain("<b>Timeout</b>: 30s");
-	// No invalid nested identical tags
-	expect(result).not.toContain("<b><b>");
 	expect(result).not.toContain("**");
 });
 

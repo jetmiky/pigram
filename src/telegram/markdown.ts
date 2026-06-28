@@ -12,6 +12,66 @@ function stripBold(text: string): string {
 	return text.replace(/<\/?b>/g, "");
 }
 
+// Strip ALL HTML tags, leaving escaped entities (&lt; etc.) intact. Used for
+// table cells, which must be plain text so monospace columns line up.
+function stripTags(html: string): string {
+	return html.replace(/<[^>]+>/g, "");
+}
+
+// Decode the HTML entities this module emits, so a cell's *display* width is
+// measured on the glyphs the user sees (`<`), not the escaped form (`&lt;`).
+// Decode &amp; last to avoid turning "&amp;lt;" into "<".
+function decodeTelegramHtml(text: string): string {
+	return text
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&amp;/g, "&");
+}
+
+// True for code points that occupy two cells in a monospace font (CJK,
+// fullwidth forms, and the symbol/emoji blocks). Approximate but covers the
+// characters that actually show up in assistant tables, including ✅ ⚠ 🆕.
+function isWideCodePoint(cp: number): boolean {
+	return (
+		(cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+		(cp >= 0x2329 && cp <= 0x232a) || // angle brackets
+		(cp >= 0x2e80 && cp <= 0x303e) || // CJK radicals, Kangxi
+		(cp >= 0x3041 && cp <= 0x33ff) || // Hiragana … CJK symbols
+		(cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
+		(cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
+		(cp >= 0xa000 && cp <= 0xa4cf) || // Yi
+		(cp >= 0xac00 && cp <= 0xd7a3) || // Hangul syllables
+		(cp >= 0xf900 && cp <= 0xfaff) || // CJK compat
+		(cp >= 0xfe30 && cp <= 0xfe4f) || // CJK compat forms
+		(cp >= 0xff00 && cp <= 0xff60) || // Fullwidth forms
+		(cp >= 0xffe0 && cp <= 0xffe6) ||
+		(cp >= 0x2600 && cp <= 0x27bf) || // Misc symbols + Dingbats (✅=2705, ⚠=26a0)
+		(cp >= 0x1f000 && cp <= 0x1faff) // Emoji & pictographs (🆕=1f195)
+	);
+}
+
+// Monospace display width of a string. Zero-width joiners, variation selectors
+// and combining marks contribute 0; wide glyphs contribute 2; everything else 1.
+export function displayWidth(text: string): number {
+	let width = 0;
+	for (const ch of text) {
+		const cp = ch.codePointAt(0)!;
+		if (cp === 0x200d) continue; // zero-width joiner
+		if (cp >= 0xfe00 && cp <= 0xfe0f) continue; // variation selectors
+		if (cp >= 0x0300 && cp <= 0x036f) continue; // combining diacriticals
+		width += isWideCodePoint(cp) ? 2 : 1;
+	}
+	return width;
+}
+
+// Right-pad a cell with spaces to a target monospace width.
+function padCell(cell: string, target: number): string {
+	const pad = target - displayWidth(decodeTelegramHtml(cell));
+	return pad > 0 ? cell + " ".repeat(pad) : cell;
+}
+
 /**
  * Convert markdown to Telegram-supported HTML subset.
  * Supported tags: <b> <i> <u> <s> <a> <code> <pre> <blockquote> <tg-spoiler>
@@ -64,25 +124,40 @@ export function markdownToTelegramHtml(markdown: string): string {
 			listContext = null;
 			return items.join('\n') + '\n\n';
 		},
-		// Telegram has no table primitive, so flatten into readable labeled blocks.
-		// Each row becomes a titled block keyed by the first column, with remaining
-		// columns listed under their header. This survives narrow screens and emoji
-		// better than space-padded monospace alignment.
+		// Telegram has no <table> primitive. Render tables as a fixed-width
+		// <pre> block: a monospace font keeps columns aligned and Telegram lets
+		// <pre> scroll horizontally on mobile, so the grid survives. Cells are
+		// reduced to plain text (no inline tags inside <pre>) and padded to the
+		// widest cell per column using display width (so emoji/CJK align too).
+		// A box-drawing divider under the header gives it the table look.
 		table(this: any, token: { header: any[]; rows: any[][] }): string {
-			const renderCell = (cell: any): string => this.parser.parseInline(cell.tokens);
-			const headers = token.header.map(renderCell);
-			const blocks = token.rows.map((row: any[]) => {
-				const cells = row.map(renderCell);
-				if (cells.length <= 2) {
-					return cells.length === 2
-						? `• <b>${stripBold(cells[0]!)}</b>: ${cells[1]!}`
-						: `• ${cells[0]!}`;
+			const toText = (cell: any): string =>
+				stripTags(this.parser.parseInline(cell.tokens)).replace(/\s+/g, " ").trim();
+
+			const header = token.header.map(toText);
+			const rows = token.rows.map((row: any[]) => row.map(toText));
+			const columnCount = header.length;
+
+			// Widest display-width cell per column drives the padding target.
+			const widths: number[] = header.map((cell, col) => {
+				let max = displayWidth(decodeTelegramHtml(cell));
+				for (const row of rows) {
+					const value = row[col] ?? "";
+					max = Math.max(max, displayWidth(decodeTelegramHtml(value)));
 				}
-				const title = stripBold(cells[0]!);
-				const lines = cells.slice(1).map((value, idx) => `• ${stripBold(headers[idx + 1]!)}: ${value}`);
-				return `<b>${title}</b>\n` + lines.join('\n');
+				return max;
 			});
-			return blocks.join('\n\n') + '\n\n';
+
+			const renderRow = (cells: string[]): string =>
+				cells
+					.map((cell, col) => (col < columnCount - 1 ? padCell(cell, widths[col]!) : cell))
+					.join("  ");
+
+			const divider = widths.map((w) => "─".repeat(Math.max(1, w))).join("──");
+
+			const lines = [renderRow(header), divider, ...rows.map((row) => renderRow(row))];
+			// The whole grid is escaped plain text wrapped in <pre>.
+			return `<pre>${lines.join("\n")}</pre>\n\n`;
 		},
 	};
 	
