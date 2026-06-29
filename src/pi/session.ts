@@ -9,11 +9,58 @@
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/** Context usage for the active model, mirroring pi's getContextUsage(). */
+export interface ContextUsage {
+	tokens: number | null;
+	contextWindow: number;
+	percent: number | null;
+}
+
+/** Cumulative token usage across a session (summed assistant entries). */
+export interface TokenUsage {
+	input: number;
+	output: number;
+}
+
 export interface SessionStatus {
 	modelId?: string;
 	provider?: string;
 	thinkingLevel: ThinkingLevel;
 	busy: boolean;
+	/** User-defined session name, if any. */
+	sessionName?: string;
+	/** Working directory of the active session. */
+	cwd?: string;
+	/** Live context-window usage for the active model. */
+	contextUsage?: ContextUsage;
+	/** Cumulative token usage across the whole session. */
+	usage?: TokenUsage;
+}
+
+/**
+ * Sum input/output token usage across all assistant message entries in a
+ * session. Mirrors how pi's own footer accumulates usage: it walks the session
+ * entries and totals each assistant message's usage. Non-assistant entries and
+ * missing usage fields are skipped, so partial or legacy sessions still total
+ * cleanly.
+ *
+ * Typed against a structural shape rather than pi's SessionEntry so it stays
+ * unit-testable without importing pi.
+ */
+export function sumAssistantUsage(
+	entries: ReadonlyArray<{
+		type: string;
+		message?: { role?: string; usage?: { input?: number; output?: number } };
+	}>,
+): TokenUsage {
+	let input = 0;
+	let output = 0;
+	for (const entry of entries) {
+		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
+		input += entry.message.usage?.input ?? 0;
+		output += entry.message.usage?.output ?? 0;
+	}
+	return { input, output };
 }
 
 export interface AgentSessionPort {
