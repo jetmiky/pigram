@@ -1,6 +1,6 @@
 {
   "name": "@jetmiky/pigram",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Clean, session-local Telegram bridge for the pi coding agent — chat with pi from your phone with rich text, streaming previews, file attachments, and native inline-keyboard dialogs.",
   "type": "module",
   "license": "MIT",
