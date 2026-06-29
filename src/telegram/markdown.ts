@@ -72,13 +72,58 @@ function padCell(cell: string, target: number): string {
 	return pad > 0 ? cell + " ".repeat(pad) : cell;
 }
 
+// Telegram HTML has no <ul>/<ol>; lists are rendered as indented plain-text
+// lines. A list item can hold BLOCK children (a nested list, a second
+// paragraph), so we cannot just parseInline its tokens — that throws
+// "Token with 'list' type was not found". Instead we walk items ourselves:
+// inline children are parsed inline, nested lists recurse one indent deeper,
+// and the renderer fully owns the recursion (marked never re-enters for the
+// nested lists because we never hand them back to the parser).
+function renderList(token: any, parser: any, depth: number): string {
+	const indent = "  ".repeat(depth);
+	const lines: string[] = [];
+	let ordinal = typeof token.start === "number" && token.start > 0 ? token.start : 1;
+
+	for (const item of token.items) {
+		let marker: string;
+		if (item.task) {
+			marker = item.checked ? "☑ " : "☐ ";
+		} else if (token.ordered) {
+			marker = `${ordinal++}. `;
+		} else {
+			marker = "• ";
+		}
+
+		const inlineParts: string[] = [];
+		const nestedBlocks: string[] = [];
+		for (const child of item.tokens ?? []) {
+			if (child.type === "list") {
+				nestedBlocks.push(renderList(child, parser, depth + 1));
+			} else if (child.type === "space") {
+				// blank line between loose-list paragraphs — skip
+			} else if (child.tokens) {
+				inlineParts.push(parser.parseInline(child.tokens));
+			} else if (typeof child.text === "string") {
+				inlineParts.push(escapeTelegramHtml(child.text));
+			}
+		}
+
+		// Multiple paragraphs in one item collapse onto a continuation line,
+		// indented under the marker so the bullet hierarchy stays readable.
+		const continuation = `\n${indent}${" ".repeat(marker.length)}`;
+		const head = inlineParts.join(continuation).replace(/\s*\n\s*/g, continuation);
+		lines.push(`${indent}${marker}${head}`);
+		for (const block of nestedBlocks) lines.push(block);
+	}
+
+	return lines.join("\n");
+}
+
 /**
  * Convert markdown to Telegram-supported HTML subset.
  * Supported tags: <b> <i> <u> <s> <a> <code> <pre> <blockquote> <tg-spoiler>
  */
 export function markdownToTelegramHtml(markdown: string): string {
-	let listContext: { ordered: boolean; index: number } | null = null;
-	
 	const renderer = {
 		text(this: any, token: { text: string; tokens?: any[] }): string {
 			// Block-level text tokens carry inline children (bold, code, etc.).
@@ -115,14 +160,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 			return "──────────\n\n";
 		},
 		list(this: any, token: { ordered: boolean; items: any[] }): string {
-			listContext = { ordered: token.ordered, index: 0 };
-			const items = token.items.map((item: any) => {
-				const prefix = listContext!.ordered ? `${++listContext!.index}. ` : '• ';
-				// Parse inline tokens so bold/italic/code inside list items render.
-				return prefix + this.parser.parseInline(item.tokens);
-			});
-			listContext = null;
-			return items.join('\n') + '\n\n';
+			return renderList(token, this.parser, 0) + '\n\n';
 		},
 		// Telegram has no <table> primitive. Render tables as a fixed-width
 		// <pre> block: a monospace font keeps columns aligned and Telegram lets

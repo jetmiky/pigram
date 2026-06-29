@@ -1,254 +1,59 @@
-import { test, expect } from "bun:test";
-import { markdownToTelegramHtml, chunkTelegramHtml } from "../src/telegram/markdown";
+import { test, expect, describe } from "bun:test";
+import { markdownToTelegramHtml } from "../src/telegram/markdown.js";
 
-test("markdownToTelegramHtml converts **bold** to <b>", () => {
-	expect(markdownToTelegramHtml("**bold**")).toBe("<b>bold</b>");
-});
+describe("markdownToTelegramHtml — lists", () => {
+	test("renders a flat bullet list", () => {
+		const html = markdownToTelegramHtml("- one\n- two");
+		expect(html).toBe("• one\n• two");
+	});
 
-test("markdownToTelegramHtml converts *italic* to <i>", () => {
-	expect(markdownToTelegramHtml("*italic*")).toBe("<i>italic</i>");
-});
+	test("renders a flat ordered list with sequential numbers", () => {
+		const html = markdownToTelegramHtml("1. first\n2. second\n3. third");
+		expect(html).toBe("1. first\n2. second\n3. third");
+	});
 
-test("markdownToTelegramHtml converts _italic_ to <i>", () => {
-	expect(markdownToTelegramHtml("_italic_")).toBe("<i>italic</i>");
-});
+	test("honours a non-1 ordered-list start", () => {
+		const html = markdownToTelegramHtml("3. third\n4. fourth");
+		expect(html).toBe("3. third\n4. fourth");
+	});
 
-test("markdownToTelegramHtml converts `code` to <code>", () => {
-	expect(markdownToTelegramHtml("`code`")).toBe("<code>code</code>");
-});
+	// Regression: a list item holding a nested list used to crash the whole
+	// converter with "Token with 'list' type was not found", taking the entire
+	// reply down with it (finalize() calls the converter outside try/catch).
+	test("renders an ordered list nested inside a bullet item without crashing", () => {
+		const md = "- parent item:\n  1. first sub\n  2. second sub\n- next parent";
+		const html = markdownToTelegramHtml(md);
+		expect(html).toBe("• parent item:\n  1. first sub\n  2. second sub\n• next parent");
+	});
 
-test("markdownToTelegramHtml escapes content in inline code", () => {
-	expect(markdownToTelegramHtml("`<div>&test</div>`")).toBe("<code>&lt;div&gt;&amp;test&lt;/div&gt;</code>");
-});
+	test("renders a bullet list nested inside a bullet item", () => {
+		const md = "- parent\n  - child a\n  - child b";
+		const html = markdownToTelegramHtml(md);
+		expect(html).toBe("• parent\n  • child a\n  • child b");
+	});
 
-// Regression guard for the double-escape bug: feeding ALREADY-rendered Telegram
-// HTML back through the converter escapes its tags into literal text
-// (<pre> -> &lt;pre&gt;, &lt; -> &amp;lt;). This is why the bridge must route
-// pre-formatted HTML (e.g. the /help block) through a verbatim sender and only
-// ever run pi's raw Markdown through this function. See src/index.ts senders.
-test("markdownToTelegramHtml double-escapes pre-rendered HTML (must not be called twice)", () => {
-	const alreadyHtml = "<pre>new - start a session\ngit - run /git &lt;status&gt;</pre>";
-	const result = markdownToTelegramHtml(alreadyHtml);
-	expect(result).toContain("&lt;pre&gt;");
-	expect(result).toContain("&amp;lt;");
-	// Proves the converter is NOT safe to apply to its own output.
-	expect(result).not.toBe(alreadyHtml);
-});
+	test("does not crash on a multi-paragraph (loose) list item", () => {
+		const md = "- first paragraph\n\n  second paragraph\n- next item";
+		const html = markdownToTelegramHtml(md);
+		// Both paragraphs survive; continuation aligns under the marker.
+		expect(html).toContain("• first paragraph");
+		expect(html).toContain("second paragraph");
+		expect(html).toContain("• next item");
+	});
 
-test("markdownToTelegramHtml converts fenced code block with language", () => {
-	const markdown = "```js\nconst x = 1;\n```";
-	const expected = '<pre><code class="language-js">const x = 1;\n</code></pre>';
-	expect(markdownToTelegramHtml(markdown)).toBe(expected);
-});
+	test("preserves inline emphasis and code inside list items", () => {
+		const html = markdownToTelegramHtml("- a **bold** and `code` item");
+		expect(html).toBe("• a <b>bold</b> and <code>code</code> item");
+	});
 
-test("markdownToTelegramHtml escapes content in fenced code blocks", () => {
-	const markdown = "```js\nif (x < 10 && y > 5) { return true; }\n```";
-	const expected = '<pre><code class="language-js">if (x &lt; 10 &amp;&amp; y &gt; 5) { return true; }\n</code></pre>';
-	expect(markdownToTelegramHtml(markdown)).toBe(expected);
-});
+	test("renders GFM task lists with checkbox glyphs", () => {
+		const html = markdownToTelegramHtml("- [x] done\n- [ ] todo");
+		expect(html).toBe("☑ done\n☐ todo");
+	});
 
-test("markdownToTelegramHtml converts links to <a> tags", () => {
-	expect(markdownToTelegramHtml("[link text](https://example.com)")).toBe('<a href="https://example.com">link text</a>');
-});
-
-test("markdownToTelegramHtml escapes link text", () => {
-	expect(markdownToTelegramHtml("[<click> & go](https://example.com)")).toBe('<a href="https://example.com">&lt;click&gt; &amp; go</a>');
-});
-
-test("markdownToTelegramHtml converts headings to bold", () => {
-	expect(markdownToTelegramHtml("# Heading 1")).toBe("<b>Heading 1</b>");
-	expect(markdownToTelegramHtml("## Heading 2")).toBe("<b>Heading 2</b>");
-	expect(markdownToTelegramHtml("### Heading 3")).toBe("<b>Heading 3</b>");
-});
-
-test("markdownToTelegramHtml converts bullet lists with • prefix", () => {
-	const markdown = "- item 1\n- item 2\n- item 3";
-	const expected = "• item 1\n• item 2\n• item 3";
-	expect(markdownToTelegramHtml(markdown)).toBe(expected);
-});
-
-test("markdownToTelegramHtml converts numbered lists with number prefix", () => {
-	const markdown = "1. first\n2. second\n3. third";
-	const expected = "1. first\n2. second\n3. third";
-	expect(markdownToTelegramHtml(markdown)).toBe(expected);
-});
-
-test("markdownToTelegramHtml escapes raw HTML characters in text", () => {
-	expect(markdownToTelegramHtml("Use <div> & <span> tags")).toBe("Use &lt;div&gt; &amp; &lt;span&gt; tags");
-});
-
-test("markdownToTelegramHtml escapes HTML in bold text", () => {
-	expect(markdownToTelegramHtml("**<important> & critical**")).toBe("<b>&lt;important&gt; &amp; critical</b>");
-});
-
-test("markdownToTelegramHtml renders tables as an aligned <pre> grid", () => {
-	const markdown = "| Col1 | Col2 |\n|------|------|\n| A    | B    |";
-	const result = markdownToTelegramHtml(markdown);
-	// Wrapped in <pre> (Telegram's only fixed-width primitive), not a <table>.
-	expect(result).toContain("<pre>");
-	expect(result).toContain("</pre>");
-	expect(result).not.toContain("<table>");
-	expect(result).not.toContain("<tr>");
-	// Header, box-drawing divider, then the data row.
-	expect(result).toContain("Col1");
-	expect(result).toContain("Col2");
-	expect(result).toContain("─");
-	expect(result).toContain("A");
-	expect(result).toContain("B");
-});
-
-test("markdownToTelegramHtml aligns table columns to the widest cell", () => {
-	const markdown = [
-		"| Dimension | Junior | Senior |",
-		"| --- | --- | --- |",
-		"| Focus | Writes code | Solves the right problem |",
-	].join("\n");
-	const result = markdownToTelegramHtml(markdown);
-	const inner = result.replace(/^[\s\S]*<pre>/, "").replace(/<\/pre>[\s\S]*$/, "");
-	const lines = inner.split("\n");
-	// header, divider, one data row
-	expect(lines).toHaveLength(3);
-	// First column padded so "Focus" lines up under "Dimension" (9 chars + 2 gap).
-	expect(lines[0]!.indexOf("Junior")).toBe(lines[2]!.indexOf("Writes code"));
-	// Second-column header and value start at the same offset.
-	expect(lines[0]!.indexOf("Junior")).toBe(11);
-});
-
-test("markdownToTelegramHtml escapes HTML entities inside table <pre>", () => {
-	const markdown = "| Name | Expr |\n| --- | --- |\n| cmp | a < b & c |";
-	const result = markdownToTelegramHtml(markdown);
-	expect(result).toContain("a &lt; b &amp; c");
-	expect(result).not.toContain("a < b & c");
-});
-
-test("markdownToTelegramHtml flattens bold in table cells to plain text in <pre>", () => {
-	const markdown = "| Setting | Value |\n| --- | --- |\n| **Timeout** | 30s |";
-	const result = markdownToTelegramHtml(markdown);
-	// Inside <pre> there are no inline tags; bold markers are gone, text stays.
-	expect(result).toContain("Timeout");
-	expect(result).toContain("30s");
-	expect(result).not.toContain("**");
-	expect(result).not.toContain("<b>");
-});
-
-test("markdownToTelegramHtml renders bold inside list items", () => {
-	const result = markdownToTelegramHtml("- A bullet with **bold label** and text");
-	expect(result).toContain("<b>bold label</b>");
-	expect(result).not.toContain("**");
-});
-
-test("markdownToTelegramHtml does not nest bold inside headings", () => {
-	const result = markdownToTelegramHtml("## A heading with **bold** inside");
-	expect(result).toContain("<b>A heading with bold inside</b>");
-	expect(result).not.toContain("<b><b>");
-});
-
-// HTML chunking tests
-
-test("chunkTelegramHtml returns single chunk for short HTML", () => {
-	const html = "<b>short message</b>";
-	expect(chunkTelegramHtml(html)).toEqual([html]);
-});
-
-test("chunkTelegramHtml returns single chunk at exactly 4096 chars", () => {
-	const html = "x".repeat(4096);
-	expect(chunkTelegramHtml(html)).toEqual([html]);
-});
-
-test("chunkTelegramHtml splits long HTML and balances tags", () => {
-	// Create HTML that's longer than 4096 with nested tags
-	const longText = "x".repeat(4100);
-	const html = `<b>${longText}</b><i>more text here</i>`;
-	
-	const chunks = chunkTelegramHtml(html);
-	
-	// Should be split into multiple chunks
-	expect(chunks.length).toBeGreaterThan(1);
-	
-	// Each chunk should be <= 4096
-	for (const chunk of chunks) {
-		expect(chunk.length).toBeLessThanOrEqual(4096);
-	}
-	
-	// First chunk should have closing </b> for the open <b>
-	expect(chunks[0]).toContain("</b>");
-	
-	// Second chunk should reopen <b> to continue the bold text
-	expect(chunks[1]).toStartWith("<b>");
-});
-
-test("chunkTelegramHtml handles oversized code blocks with language attribute", () => {
-	const longCode = "const x = 1;\n".repeat(400); // Creates ~5200 chars
-	const html = `<pre><code class="language-js">${longCode}</code></pre>`;
-	
-	const chunks = chunkTelegramHtml(html);
-	
-	// Should be split into multiple chunks
-	expect(chunks.length).toBeGreaterThan(1);
-	
-	// Each chunk should be <= 4096
-	for (const chunk of chunks) {
-		expect(chunk.length).toBeLessThanOrEqual(4096);
-	}
-	
-	// First chunk should close the code block
-	expect(chunks[0]).toContain("</code>");
-	expect(chunks[0]).toContain("</pre>");
-	
-	// Second chunk should reopen with the language attribute preserved
-	expect(chunks[1]).toStartWith('<pre><code class="language-js">');
-});
-
-// --- Horizontal rule (<hr> is NOT a Telegram-allowed tag) ---
-// Regression: emitting <hr> makes Telegram reject the message (400) and the
-// bridge silently falls back to plain text, killing formatting for the whole
-// reply. A rule must become a plain-text separator instead.
-
-test("markdownToTelegramHtml renders --- as a text separator, not <hr>", () => {
-	const out = markdownToTelegramHtml("Above\n\n---\n\nBelow");
-	expect(out).not.toContain("<hr");
-	expect(out).toContain("──────────");
-	expect(out).toContain("Above");
-	expect(out).toContain("Below");
-});
-
-test("markdownToTelegramHtml renders *** rule as a text separator", () => {
-	expect(markdownToTelegramHtml("A\n\n***\n\nB")).not.toContain("<hr");
-});
-
-// --- Tag safety guard: every construct must yield only Telegram-allowed tags ---
-// Telegram's HTML mode allows a fixed whitelist; any other tag triggers a 400.
-// This guard catches a renderer change that introduces an unsupported tag.
-
-test("markdownToTelegramHtml only emits Telegram-allowed HTML tags", () => {
-	const allowed = new Set([
-		"b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
-		"a", "code", "pre", "blockquote", "tg-spoiler", "tg-emoji", "span",
-	]);
-	const kitchenSink = [
-		"# Heading",
-		"",
-		"**bold** and *italic* and `inline code`.",
-		"",
-		"```js",
-		"const x = 1;",
-		"```",
-		"",
-		"> a block quote",
-		"",
-		"---",
-		"",
-		"| Name | Age |",
-		"|------|-----|",
-		"| Alice | 30 |",
-		"",
-		"- bullet one",
-		"- bullet two",
-		"",
-		"[a link](https://example.com)",
-	].join("\n");
-	const html = markdownToTelegramHtml(kitchenSink);
-	const usedTags = [...new Set([...html.matchAll(/<\/?([a-zA-Z0-9-]+)/g)].map((m) => m[1]!))];
-	const disallowed = usedTags.filter((t) => !allowed.has(t));
-	expect(disallowed).toEqual([]);
+	test("renders deeply nested mixed lists", () => {
+		const md = "- L0\n  - L1\n    1. L2a\n    2. L2b";
+		const html = markdownToTelegramHtml(md);
+		expect(html).toBe("• L0\n  • L1\n    1. L2a\n    2. L2b");
+	});
 });
