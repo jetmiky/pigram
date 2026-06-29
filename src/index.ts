@@ -87,6 +87,12 @@ export default function pigram(pi: ExtensionAPI): void {
 	// enabled the turn also carries a PreviewSession that owns the live bubble.
 	let activeTurn: { chatId: number; preview?: PreviewSession } | undefined;
 
+	// The most recent SUCCESSFUL assistant text reply (raw Markdown), kept so
+	// /resend can replay it without a new LLM call. Captured on agent_end,
+	// cleared whenever the session is reset (/new) or torn down so /resend
+	// never replays a reply that belongs to a previous session.
+	let lastReplyMarkdown: string | undefined;
+
 	const followUps = new FollowUpQueue();
 	const attachments = new AttachmentQueue();
 	// The plain event context, refreshed on every event/command. Safe for status,
@@ -253,11 +259,17 @@ export default function pigram(pi: ExtensionAPI): void {
 					activeTurn = undefined;
 				}
 				followUps.clear();
+				lastReplyMarkdown = undefined;
 				await performNewSession(chatId, parsed.name);
 				return true;
 			}
 			case "resend": {
-				await sendPlain(chatId, "Resend is not available in this build");
+				if (!lastReplyMarkdown) {
+					await sendPlain(chatId, "ℹ️ Nothing to resend yet — no assistant reply in this session.");
+					return true;
+				}
+				// Replay the stored reply verbatim; no new turn, no LLM call.
+				await sendMarkdown(chatId, lastReplyMarkdown);
 				return true;
 			}
 			case "git": {
@@ -620,6 +632,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Abandon any in-flight turn state from the old session.
 		activeTurn = undefined;
 		followUps.clear();
+		lastReplyMarkdown = undefined;
 	});
 
 	// --- Assistant reply forwarding ---
@@ -651,6 +664,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		} else if (outcome.stopReason === "error") {
 			await sendPlain(turn.chatId, `⚠️ ${outcome.errorMessage ?? "pi failed while processing the request."}`);
 		} else if (outcome.text) {
+			// Remember this successful reply so /resend can replay it.
+			lastReplyMarkdown = outcome.text;
 			// With a preview, finalize edits the live bubble in place to the rich
 			// reply (no duplicate message). Without one, send the reply directly.
 			if (turn.preview) {
