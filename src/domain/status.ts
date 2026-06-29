@@ -84,8 +84,7 @@ function formatContextLine(context: ContextUsage | undefined): string {
 export function formatSessionStatus(view: SessionStatusView): string {
 	const lines: string[] = [
 		"📊 <b>Pigram Session Status</b>",
-        "—",
-		"",
+		"—",
 		"🧠 <b>AI Model</b>",
 		`- Provider: ${escapeHtml(view.provider ?? "unknown")}`,
 		`- Model: ${escapeHtml(view.model ?? "unknown")}`,
