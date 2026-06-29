@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentSessionPort, PiSessionDriver, ThinkingLevel } from "../src/pi/session";
-import { createAgentSession } from "../src/pi/session";
+import { createAgentSession, sumAssistantUsage } from "../src/pi/session";
 
 interface FakeSessionState {
 	model?: { id: string; provider?: string };
@@ -211,6 +211,38 @@ describe("AgentSession adapter", () => {
 				args: ["What do you see?", { images: ["/tmp/image1.png", "/tmp/image2.jpg"] }],
 			},
 		]);
+	});
+});
+
+describe("sumAssistantUsage", () => {
+	test("returns zeroed totals for an empty session", () => {
+		expect(sumAssistantUsage([])).toEqual({ input: 0, output: 0 });
+	});
+
+	test("sums input and output across all assistant message entries", () => {
+		const entries = [
+			{ type: "message", message: { role: "assistant", usage: { input: 100, output: 10 } } },
+			{ type: "message", message: { role: "assistant", usage: { input: 250, output: 25 } } },
+		];
+		expect(sumAssistantUsage(entries)).toEqual({ input: 350, output: 35 });
+	});
+
+	test("ignores user messages and non-message entries", () => {
+		const entries = [
+			{ type: "message", message: { role: "user", content: "hi" } },
+			{ type: "message", message: { role: "assistant", usage: { input: 100, output: 10 } } },
+			{ type: "model_change", provider: "anthropic", modelId: "claude" },
+			{ type: "session_info", name: "my-session" },
+		];
+		expect(sumAssistantUsage(entries)).toEqual({ input: 100, output: 10 });
+	});
+
+	test("tolerates assistant messages missing usage fields", () => {
+		const entries = [
+			{ type: "message", message: { role: "assistant" } },
+			{ type: "message", message: { role: "assistant", usage: { input: 5 } } },
+		];
+		expect(sumAssistantUsage(entries)).toEqual({ input: 5, output: 0 });
 	});
 });
 

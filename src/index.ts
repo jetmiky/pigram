@@ -27,7 +27,7 @@ import { DEFAULT_UX, type PigramConfig } from "./config/schema.js";
 import { createHttpTransport, type TelegramTransport, type TelegramUpdate } from "./telegram/transport.js";
 import { TelegramPoller } from "./telegram/poller.js";
 import { DialogManager } from "./telegram/dialog.js";
-import { markdownToTelegramHtml, chunkTelegramHtml, escapeTelegramHtml } from "./telegram/markdown.js";
+import { markdownToTelegramHtml, chunkTelegramHtml } from "./telegram/markdown.js";
 import { decidePairing, applyPairing, type PairingState } from "./domain/pairing.js";
 import {
 	parseCommand,
@@ -36,6 +36,7 @@ import {
 	UNKNOWN_COMMAND_MESSAGE,
 } from "./domain/commands.js";
 import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
+import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
 import {
 	findPendingReconnectRequest,
 	formatNewSessionConfirmation,
@@ -189,15 +190,24 @@ export default function pigram(pi: ExtensionAPI): void {
 			}
 			case "status": {
 				const s = session.getStatus();
-				const model = `${s.provider ? `${s.provider}/` : ""}${s.modelId ?? "unknown"}`;
-				const lines = [
-					"📊 <b>Session status</b>",
-					`🤖 Model: ${escapeTelegramHtml(model)}`,
-					`🧠 Thinking: ${escapeTelegramHtml(s.thinkingLevel)}`,
-					`${s.busy ? "⏳" : "✅"} State: ${s.busy ? "busy" : "idle"}`,
-					`📥 Queued: ${followUps.size}`,
-				];
-				await sendHtml(chatId, lines.join("\n"));
+				if (!paths) {
+					await sendPlain(chatId, "⚠️ Pigram config not loaded yet.");
+					return true;
+				}
+				const view: SessionStatusView = {
+					thinking: s.thinkingLevel,
+					busy: s.busy,
+					queued: followUps.size,
+					mode: paths.scope,
+					configPath: paths.configPath,
+				};
+				if (s.provider) view.provider = s.provider;
+				if (s.modelId) view.model = s.modelId;
+				if (s.sessionName) view.sessionName = s.sessionName;
+				if (s.contextUsage) view.context = s.contextUsage;
+				if (s.usage) view.usage = s.usage;
+				if (s.cwd) view.rootDirectory = s.cwd;
+				await sendHtml(chatId, formatSessionStatus(view));
 				return true;
 			}
 			case "model": {
@@ -339,6 +349,18 @@ export default function pigram(pi: ExtensionAPI): void {
 		abortController = new AbortController();
 		const myController = abortController;
 		pollingActive = true;
+		// Surface a persistent footer line so the user can see at a glance that
+		// Telegram is connected, which scope is active, and which config loaded.
+		if (paths) {
+			latestCtx?.ui.setStatus(
+				"pigram",
+				formatFooterStatus({
+					...(me.username ? { botUsername: me.username } : {}),
+					mode: paths.scope,
+					configPath: paths.configPath,
+				}),
+			);
+		}
 		const poller = new TelegramPoller({
 			transport,
 			handler: onUpdate,
@@ -366,6 +388,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		abortController?.abort();
 		abortController = undefined;
 		pollingActive = false;
+		// Clear the connected footer line; the bridge is no longer polling.
+		latestCtx?.ui.setStatus("pigram", undefined);
 	}
 
 	/**

@@ -16,6 +16,7 @@ import { extname } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionPort, SessionStatus, ThinkingLevel } from "./session.js";
+import { sumAssistantUsage } from "./session.js";
 
 /**
  * Returns the latest pi event context, if any. Pi hands a context to every
@@ -74,6 +75,14 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 			};
 			if (model?.id) status.modelId = model.id;
 			if (model?.provider) status.provider = model.provider;
+			if (ctx) {
+				const sessionName = ctx.sessionManager.getSessionName();
+				if (sessionName) status.sessionName = sessionName;
+				if (ctx.cwd) status.cwd = ctx.cwd;
+				const contextUsage = ctx.getContextUsage();
+				if (contextUsage) status.contextUsage = contextUsage;
+				status.usage = sumAssistantUsage(ctx.sessionManager.getEntries());
+			}
 			return status;
 		},
 
