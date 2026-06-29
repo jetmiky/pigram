@@ -10,6 +10,7 @@
  */
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
@@ -36,6 +37,7 @@ import {
 	UNKNOWN_COMMAND_MESSAGE,
 } from "./domain/commands.js";
 import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
+import { getGitExecSpec, runGitSpec, type GitRunResult } from "./domain/git.js";
 import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
 import {
 	findPendingReconnectRequest,
@@ -184,6 +186,25 @@ export default function pigram(pi: ExtensionAPI): void {
 	}
 
 	// --- Command handling (maps parsed intents to session/bridge actions) ---
+
+	/**
+	 * Run `git <args>` in `cwd` and resolve its exit code + captured streams.
+	 * Uses execFile (argv array, NO shell) so a branch name can never be
+	 * interpreted as shell — command injection is structurally impossible.
+	 * Never rejects: a failed/again-missing git resolves with a non-zero code.
+	 */
+	function runGit(args: string[], cwd: string): Promise<GitRunResult> {
+		return new Promise((resolve) => {
+			execFile("git", args, { cwd }, (error, stdout, stderr) => {
+				resolve({
+					exitCode: error ? ((error as { code?: number }).code ?? 1) : 0,
+					stdout: typeof stdout === "string" ? stdout : "",
+					stderr: typeof stderr === "string" ? stderr : "",
+				});
+			});
+		});
+	}
+
 	async function handleCommand(chatId: number, text: string): Promise<boolean> {
 		const parsed = parseCommand(text);
 		if (parsed === null) return false; // not a command
@@ -273,7 +294,21 @@ export default function pigram(pi: ExtensionAPI): void {
 				return true;
 			}
 			case "git": {
-				await sendPlain(chatId, parsed.git.ok ? `git ${parsed.git.kind}` : parsed.git.message);
+				if (!parsed.git.ok) {
+					await sendPlain(chatId, parsed.git.message);
+					return true;
+				}
+				// `nb` mutates the working tree (creates+switches a branch); refuse
+				// it mid-turn so a new branch never lands under a running prompt.
+				if (parsed.git.kind === "nb" && session.getStatus().busy) {
+					await sendPlain(chatId, 'git nb failed: pi is busy; send /stop first');
+					return true;
+				}
+				const gitCwd = session.getStatus().cwd ?? process.cwd();
+				const spec = getGitExecSpec(parsed.git);
+				const reply = await runGitSpec(spec, runGit, gitCwd);
+				// Git output is plain terminal text; send verbatim (no Markdown render).
+				await sendPlain(chatId, reply);
 				return true;
 			}
 			case "unknown":
