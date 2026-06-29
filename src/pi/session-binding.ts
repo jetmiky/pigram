@@ -17,6 +17,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionPort, SessionStatus, ThinkingLevel } from "./session.js";
 import { sumAssistantUsage } from "./session.js";
+import { resolveModelTarget } from "../domain/model.js";
 
 /**
  * Returns the latest pi event context, if any. Pi hands a context to every
@@ -88,13 +89,17 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 
 		async setModel(modelId: string): Promise<void> {
 			const ctx = requireCtx();
-			// Accept "provider/id" or bare "id"; resolve against the registry.
-			const slash = modelId.indexOf("/");
-			const provider = slash > 0 ? modelId.slice(0, slash) : (ctx.model?.provider ?? "");
-			const id = slash > 0 ? modelId.slice(slash + 1) : modelId;
-			const resolved = ctx.modelRegistry.find(provider, id);
-			if (!resolved) throw new Error(`Unknown model: ${modelId}`);
-			const ok = await pi.setModel(resolved);
+			// Resolve the specifier against the registry. A model id can itself
+			// contain a slash (e.g. "kr/claude-sonnet-4.5" under "9router"), so we
+			// only treat a prefix as a provider when it is a KNOWN provider —
+			// never guessing from slash position. See resolveModelTarget.
+			const resolution = resolveModelTarget({
+				registry: ctx.modelRegistry,
+				currentProvider: ctx.model?.provider ?? "",
+				specifier: modelId,
+			});
+			if (!resolution.ok) throw new Error(`Unknown model: ${modelId}`);
+			const ok = await pi.setModel(resolution.model);
 			if (!ok) throw new Error(`No API key available for model: ${modelId}`);
 		},
 
