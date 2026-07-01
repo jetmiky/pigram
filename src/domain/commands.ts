@@ -1,3 +1,6 @@
+/** Commands that the user can trigger without a slash prefix (case-insensitive). */
+const BARE_STOP_WORDS = new Set(["stop", "wait", "cancel", "abort"]);
+
 /**
  * Declarative Telegram command registry and parser (pure, no I/O).
  *
@@ -55,8 +58,8 @@ export const COMMAND_SPECS: CommandSpec[] = [
 	},
 	{
 		name: "stop",
-		botFatherDescription: "abort active turn",
-		helpUsage: "/stop - abort active turn",
+		botFatherDescription: "abort active turn (or send: stop, wait, cancel, abort)",
+		helpUsage: "/stop - abort active turn (or send: stop, wait, cancel, abort)",
 	},
 	{
 		name: "help",
@@ -145,6 +148,11 @@ export function parseGitCommand(tokens: string[]): GitCommand {
  */
 export function parseCommand(text: string): ParsedCommand | null {
 	const trimmed = text.trim();
+
+	// Bare stop words (case-insensitive exact match, no slash needed).
+	if (BARE_STOP_WORDS.has(trimmed.toLowerCase())) {
+		return { kind: "stop" };
+	}
 
 	// Not a command if it doesn't start with /
 	if (!trimmed.startsWith("/")) {

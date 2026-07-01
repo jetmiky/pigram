@@ -73,11 +73,22 @@ Send these to your bot in Telegram:
 | `/thinking <level>` | Change thinking level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
 | `/compact` | Compact the conversation context |
 | `/resend` | Resend the latest assistant reply |
-| `/stop` | Abort the active turn |
+| `/stop` | Abort the active turn (or send: `stop`, `wait`, `cancel`, `abort`) |
 | `/help` | Show help |
 | `/git <status\|log\|nb>` | Run safe git shortcuts in the current directory |
 
 Run `/help` once and copy the generated block into BotFather's `/setcommands` so the commands show up in Telegram's command menu.
+
+### Bare-word shortcuts
+
+For quick access, the stop command can also be triggered without a slash by sending one of these words exactly (case-insensitive):
+
+- `stop`
+- `wait`
+- `cancel`
+- `abort`
+
+These are exact-match only — `"stop the music"` or `"wait for me"` are forwarded to pi as normal messages. When pi is idle, the bot replies with "Nothing to stop, Pi is idle."
 
 ### pi-session commands
 

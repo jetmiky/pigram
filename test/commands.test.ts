@@ -52,6 +52,34 @@ describe("parseCommand", () => {
 		expect(parseCommand("/stop")).toEqual({ kind: "stop" });
 	});
 
+	test("parses bare stop words as stop intent", () => {
+		expect(parseCommand("stop")).toEqual({ kind: "stop" });
+		expect(parseCommand("wait")).toEqual({ kind: "stop" });
+		expect(parseCommand("cancel")).toEqual({ kind: "stop" });
+		expect(parseCommand("abort")).toEqual({ kind: "stop" });
+	});
+
+	test("parses bare stop words case-insensitively", () => {
+		expect(parseCommand("STOP")).toEqual({ kind: "stop" });
+		expect(parseCommand("Wait")).toEqual({ kind: "stop" });
+		expect(parseCommand("CANCEL")).toEqual({ kind: "stop" });
+		expect(parseCommand("Abort")).toEqual({ kind: "stop" });
+		expect(parseCommand("sToP")).toEqual({ kind: "stop" });
+	});
+
+	test("trims whitespace on bare stop words", () => {
+		expect(parseCommand("  stop  ")).toEqual({ kind: "stop" });
+		expect(parseCommand("	wait\n")).toEqual({ kind: "stop" });
+	});
+
+	test("does not treat stop words with extra text as stop", () => {
+		expect(parseCommand("stop the music")).toBeNull();
+		expect(parseCommand("wait for me")).toBeNull();
+		expect(parseCommand("cancel my subscription")).toBeNull();
+		expect(parseCommand("abort mission")).toBeNull();
+		expect(parseCommand("stop now")).toBeNull();
+	});
+
 	test("parses /help", () => {
 		expect(parseCommand("/help")).toEqual({ kind: "help" });
 	});
@@ -185,7 +213,7 @@ model - switch model, optionally including provider and thinking level
 thinking - change thinking level
 compact - compact context
 resend - resend the latest assistant reply from this session
-stop - abort active turn
+stop - abort active turn (or send: stop, wait, cancel, abort)
 help - show help
 git - run safe git shortcuts in current cwd`,
 		);
@@ -225,7 +253,7 @@ Commands:
 /thinking &lt;level&gt; - change thinking level
 /compact - compact context
 /resend - resend the latest assistant reply from this session
-/stop - abort active turn
+/stop - abort active turn (or send: stop, wait, cancel, abort)
 /help - show help
 /git &lt;status|log|nb&gt; - run safe git shortcuts in current cwd
 
@@ -237,7 +265,7 @@ model - switch model, optionally including provider and thinking level
 thinking - change thinking level
 compact - compact context
 resend - resend the latest assistant reply from this session
-stop - abort active turn
+stop - abort active turn (or send: stop, wait, cancel, abort)
 help - show help
 git - run safe git shortcuts in current cwd</pre>`,
 		);
@@ -254,7 +282,7 @@ Commands:
 /thinking &lt;level&gt; - change thinking level
 /compact - compact context
 /resend - resend the latest assistant reply from this session
-/stop - abort active turn
+/stop - abort active turn (or send: stop, wait, cancel, abort)
 /help - show help
 /git &lt;status|log|nb&gt; - run safe git shortcuts in current cwd`,
 		);

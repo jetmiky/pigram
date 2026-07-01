@@ -267,6 +267,10 @@ export default function pigram(pi: ExtensionAPI): void {
 				return true;
 			}
 			case "stop": {
+				if (!session.getStatus().busy) {
+					await sendPlain(chatId, "Nothing to stop, Pi is idle.");
+					return true;
+				}
 				await session.abort();
 				await sendPlain(chatId, "🛑 Aborted");
 				return true;
