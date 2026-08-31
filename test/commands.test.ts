@@ -111,6 +111,15 @@ describe("parseCommand", () => {
 	test("parses /thinking with level", () => {
 		expect(parseCommand("/thinking high")).toEqual({ kind: "thinking", level: "high" });
 		expect(parseCommand("/thinking low")).toEqual({ kind: "thinking", level: "low" });
+		expect(parseCommand("/thinking max")).toEqual({ kind: "thinking", level: "max" });
+	});
+
+	test("parses max while switching models", () => {
+		expect(parseCommand("/model openai/gpt-5 max")).toEqual({
+			kind: "model",
+			model: "openai/gpt-5",
+			thinking: "max",
+		});
 	});
 
 	test("parses /git commands", () => {

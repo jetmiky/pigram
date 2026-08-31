@@ -7,7 +7,7 @@
  * without requiring pigram to import pi at runtime.
  */
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Context usage for the active model, mirroring pi's getContextUsage(). */
 export interface ContextUsage {

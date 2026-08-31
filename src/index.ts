@@ -74,7 +74,7 @@ const POLL_TIMEOUT_SECONDS = 30;
 // needs a longer pause so the competing consumer can terminate Telegram-side.
 const POLL_CONFLICT_BACKOFF_MS = 3000;
 
-const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** Coerce arbitrary text to a valid ThinkingLevel, or undefined if not recognised. */
 function asThinkingLevel(value: string): ThinkingLevel | undefined {
