@@ -83,7 +83,7 @@ Send these to your bot in Telegram:
 | `/new [name]` | Start a fresh pi session, optionally named |
 | `/status` | Show session, directory, model, usage, cost, and context |
 | `/model [provider/]id [thinking]` | Switch model, optionally with provider and thinking level |
-| `/thinking <level>` | Change thinking level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `/thinking <level>` | Change thinking level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) |
 | `/compact` | Compact the conversation context |
 | `/resend` | Resend the latest assistant reply |
 | `/stop` | Abort the active turn (or send: `stop`, `wait`, `cancel`, `abort`) |
@@ -91,6 +91,11 @@ Send these to your bot in Telegram:
 | `/git <status\|log\|nb>` | Run safe git shortcuts in the current directory |
 
 Run `/help` once and copy the generated block into BotFather's `/setcommands` so the commands show up in Telegram's command menu.
+
+`/thinking max` selects pi's highest available reasoning level. The same level
+can be supplied while switching models, for example `/model openai/gpt-5 max`.
+Model/provider support still determines whether that level has a distinct
+effect; Pigram forwards the selected level to the active pi session.
 
 ### Bare-word shortcuts
 

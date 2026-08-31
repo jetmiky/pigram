@@ -113,7 +113,7 @@ describe("AgentSession adapter", () => {
 		]);
 	});
 
-	test("setThinkingLevel forwards to driver", () => {
+	test("setThinkingLevel forwards max to the pi driver", () => {
 		const state: FakeSessionState = {
 			isProcessing: false,
 			thinkingLevel: "low",
@@ -122,12 +122,12 @@ describe("AgentSession adapter", () => {
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
-		session.setThinkingLevel("high");
+		session.setThinkingLevel("max");
 
 		expect(state.calls).toEqual([
-			{ method: "setThinkingLevel", args: ["high"] },
+			{ method: "setThinkingLevel", args: ["max"] },
 		]);
-		expect(state.thinkingLevel).toBe("high");
+		expect(state.thinkingLevel).toBe("max");
 	});
 
 	test("compact awaits session.compact", async () => {

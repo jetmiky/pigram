@@ -47,12 +47,15 @@
     "marked": "15.0.12"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.80.0",
-    "@earendil-works/pi-agent-core": "^0.80.0",
-    "@earendil-works/pi-coding-agent": "^0.80.0",
+    "@earendil-works/pi-ai": "^0.84.0",
+    "@earendil-works/pi-agent-core": "^0.84.0",
+    "@earendil-works/pi-coding-agent": "^0.84.0",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.0",
+    "@earendil-works/pi-agent-core": "^0.84.0",
+    "@earendil-works/pi-coding-agent": "^0.84.0",
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
     "@types/node": "^22.0.0",
