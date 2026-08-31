@@ -198,6 +198,19 @@ describe("PreviewSession finalize", () => {
 describe("PreviewSession rich table finalize", () => {
 	const TABLE_MD = "| A | B |\n|---|---|\n| 1 | 2 |";
 
+	test("rich table delivery works when partial previews are disabled", async () => {
+		const { calls, transport } = fakeRichTransport();
+		const session = new PreviewSession(1, { transport, streamPreviews: false, richTables: true });
+
+		await session.update("partial");
+		expect(calls).toHaveLength(0);
+
+		await session.finalize(TABLE_MD);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.method).toBe("sendRichMessage");
+		expect(calls[0]?.markdown).toBe(TABLE_MD);
+	});
+
 	function fakeRichTransport(opts: {
 		failRich?: boolean;
 		richError?: Error;

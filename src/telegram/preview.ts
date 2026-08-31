@@ -76,6 +76,8 @@ export interface PreviewSessionDeps {
 	 * (native bordered tables). Default true; failures fall back to HTML.
 	 */
 	richTables?: boolean | undefined;
+	/** Whether partial assistant updates should be sent. Defaults to true. */
+	streamPreviews?: boolean | undefined;
 }
 
 /** Trim and truncate preview text to a safe single-message length. */
@@ -100,6 +102,7 @@ export class PreviewSession {
 	private readonly now: () => number;
 	private readonly timer: PreviewTimer;
 	private readonly richTables: boolean;
+	private readonly streamPreviews: boolean;
 
 	private messageId: number | undefined;
 	private pending: string | undefined;
@@ -119,6 +122,7 @@ export class PreviewSession {
 		this.now = deps.now ?? Date.now;
 		this.timer = deps.timer ?? realTimer();
 		this.richTables = deps.richTables ?? true;
+		this.streamPreviews = deps.streamPreviews ?? true;
 	}
 
 	/**
@@ -127,7 +131,7 @@ export class PreviewSession {
 	 * immediately, later ones schedule a single trailing flush.
 	 */
 	async update(rawPartial: string): Promise<void> {
-		if (this.finalized) return;
+		if (this.finalized || !this.streamPreviews) return;
 		const text = clip(stripReasoningTags(rawPartial));
 		if (!text || text === this.lastSent) return;
 		this.pending = text;
