@@ -135,7 +135,10 @@ describe("migrateLegacyConfig", () => {
         ux: {
           richText: false,
           streamPreviews: false,
-          richTables: true, // defaulted
+          richTables: true,
+        },
+        delivery: {
+          terminalReplies: "off",
         },
       });
     });
