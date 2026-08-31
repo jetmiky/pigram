@@ -45,11 +45,11 @@ user can disable Previews, leaving only a typing indicator until the reply is
 ready.
 
 ### Dialog
-A native Telegram interaction driven by inline-keyboard buttons that a pi
-command can request in the middle of a Turn. Three kinds: a **select** (choose
-one of several options), a **confirm** (yes/no), and a **text input** (free-form
-reply). A Dialog pauses the command until the paired user answers or it times
-out.
+A native Telegram interaction driven by inline-keyboard buttons that the agent
+can request through a dedicated tool in the middle of a Turn. Three kinds: a
+**select** (choose one of several options), a **confirm** (yes/no), and a
+**text input** (free-form reply). A Dialog pauses the tool until the paired
+user answers, cancels, or it times out.
 
 ### Attachment
 An outbound file that pi sends back through the Bridge to Telegram. pi requests

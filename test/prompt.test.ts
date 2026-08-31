@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import {
   type InboundMessage,
   type MappedPrompt,
   mapInboundMessage,
+  routeInboundText,
   FollowUpQueue,
 } from "../src/domain/prompt.js";
 
@@ -171,5 +172,29 @@ describe("FollowUpQueue", () => {
     expect(dequeued?.text).toBe("complex");
     expect(dequeued?.imagePaths).toEqual(["/tmp/img.jpg"]);
     expect(dequeued?.documentPaths).toEqual(["/tmp/doc.pdf"]);
+  });
+});
+
+describe("routeInboundText", () => {
+  test("commands always win over a pending text dialog", () => {
+    expect(routeInboundText("/status", true)).toBe("command");
+    expect(routeInboundText("/status", false)).toBe("command");
+  });
+
+  test("bare stop words are commands, not dialog answers", () => {
+    expect(routeInboundText("stop", true)).toBe("command");
+    expect(routeInboundText("WAIT", true)).toBe("command");
+  });
+
+  test("unknown slash intents are routed as commands, never consumed as answers", () => {
+    expect(routeInboundText("/bogus", true)).toBe("command");
+  });
+
+  test("eligible text answers a pending dialog", () => {
+    expect(routeInboundText("hello", true)).toBe("dialog_answer");
+  });
+
+  test("text with no pending dialog becomes a prompt", () => {
+    expect(routeInboundText("hello", false)).toBe("prompt");
   });
 });

@@ -3,10 +3,10 @@
  *
  * This is the thin wiring layer for the pi extension. It contains NO business
  * logic of its own: it resolves configuration, constructs the deep modules
- * (transport, poller, dialog manager, session binding, command dispatch), and
- * registers pi commands + the telegram_attach tool. All behavior lives in the
- * modules this file composes — the deletion test for index.ts is "removing it
- * loses only the wiring, not any logic".
+ * (transport, poller, telegram ask controller, session binding, command
+ * dispatch), and registers pi commands + the telegram tools. All behavior
+ * lives in the modules this file composes — the deletion test for index.ts is
+ * "removing it loses only the wiring, not any logic".
  */
 import { homedir } from "node:os";
 import { randomUUID, createHash } from "node:crypto";
@@ -33,7 +33,7 @@ import { migrateLegacyConfig } from "./config/migrate.js";
 import { DEFAULT_DELIVERY, DEFAULT_UX, type PigramConfig } from "./config/schema.js";
 import { createHttpTransport, type TelegramTransport, type TelegramUpdate } from "./telegram/transport.js";
 import { TelegramPoller } from "./telegram/poller.js";
-import { DialogManager } from "./telegram/dialog.js";
+import { TelegramAskController, registerTelegramAskTool } from "./telegram/ask.js";
 import { TypingIndicator } from "./telegram/typing.js";
 import { markdownToTelegramHtml, chunkTelegramHtml, chunkPlainText } from "./telegram/markdown.js";
 import { decidePairing, applyPairing, type PairingState } from "./domain/pairing.js";
@@ -43,7 +43,7 @@ import {
 	formatBotFatherCommands,
 	UNKNOWN_COMMAND_MESSAGE,
 } from "./domain/commands.js";
-import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
+import { mapInboundMessage, routeInboundText, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
 import { getGitExecSpec, runGitSpec, type GitRunResult } from "./domain/git.js";
 import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
 import {
@@ -90,7 +90,7 @@ export default function pigram(pi: ExtensionAPI): void {
 	let config: PigramConfig | undefined;
 	let pairing: PairingState = { pairedUserId: null };
 	let transport: TelegramTransport | undefined;
-	let dialog: DialogManager | undefined;
+	let askController: TelegramAskController | undefined;
 	let abortController: AbortController | undefined;
 	let pollingActive = false;
 	let activeChatId: number | undefined;
@@ -100,7 +100,7 @@ export default function pigram(pi: ExtensionAPI): void {
 	// submit call to know when the reply is ready. Instead we track the active
 	// turn here and clear it in the agent_end handler. When stream previews are
 	// enabled the turn also carries a PreviewSession that owns the live bubble.
-	let activeTurn: { chatId: number; preview?: PreviewSession; stopTyping?: () => void } | undefined;
+	let activeTurn: { chatId: number; userId: number; preview?: PreviewSession; stopTyping?: () => void } | undefined;
 
 	// The most recent SUCCESSFUL assistant text reply (raw Markdown), kept so
 	// /resend can replay it without a new LLM call. Captured on agent_end,
@@ -300,6 +300,7 @@ export default function pigram(pi: ExtensionAPI): void {
 				return true;
 			}
 			case "stop": {
+				askController?.cancel();
 				if (!session.getStatus().busy) {
 					await sendPlain(chatId, "Nothing to stop, Pi is idle.");
 					return true;
@@ -309,6 +310,7 @@ export default function pigram(pi: ExtensionAPI): void {
 				return true;
 			}
 			case "new": {
+				askController?.cancel();
 				// Make /new safe even mid-generation: abort any in-flight turn
 				// and drop queued follow-ups before resetting, so the new session
 				// starts clean and no stale reply lands in it.
@@ -316,8 +318,8 @@ export default function pigram(pi: ExtensionAPI): void {
 					await session.abort();
 					activeTurn.stopTyping?.();
 					activeTurn = undefined;
-					}
-					followUps.clear();
+				}
+				followUps.clear();
 				lastReplyMarkdown = undefined;
 				pendingNotify = undefined;
 				await performNewSession(chatId, parsed.name);
@@ -373,21 +375,28 @@ export default function pigram(pi: ExtensionAPI): void {
 		}
 		activeChatId = chatId;
 
-		// Dialog text capture takes priority.
-		if (dialog?.handleText(msg.text ?? "")) return;
-
-		// Slash command?
-		if (msg.text && (await handleCommand(chatId, msg.text))) return;
+		// Commands retain priority over a pending text question. Lifecycle
+		// commands (/stop and /new) cancel the question in their command
+		// handlers; non-lifecycle commands leave it pending for the next
+		// eligible message.
+		if (msg.text) {
+			const route = routeInboundText(msg.text, askController?.hasPendingText() ?? false);
+			if (route === "command") {
+				if (await handleCommand(chatId, msg.text)) return;
+			} else if (route === "dialog_answer") {
+				if (askController?.handleText(msg.text, { chatId, userId })) return;
+			}
+		}
 
 		// Otherwise forward to pi as a prompt (queue if a turn is in flight).
 		if (activeTurn) {
 			followUps.enqueue(msg);
 			return;
 		}
-		await deliverPrompt(chatId, msg);
+		await deliverPrompt(chatId, userId, msg);
 	}
 
-	async function deliverPrompt(chatId: number, msg: InboundMessage): Promise<void> {
+	async function deliverPrompt(chatId: number, userId: number, msg: InboundMessage): Promise<void> {
 		// Mark the turn in flight BEFORE submitting. pi.sendUserMessage returns
 		// immediately; the reply arrives later via message_update / agent_end.
 		const streamPreviews = config?.ux?.streamPreviews ?? DEFAULT_UX.streamPreviews;
@@ -414,15 +423,16 @@ export default function pigram(pi: ExtensionAPI): void {
 				})
 			: undefined;
 		typing?.start();
-		activeTurn = { chatId, ...(preview ? { preview } : {}), stopTyping: () => typing?.stop() };
+		activeTurn = { chatId, userId, ...(preview ? { preview } : {}), stopTyping: () => typing?.stop() };
+		askController?.beginTurn({ chatId, userId });
 		const mapped = mapInboundMessage(msg);
 		await session.sendPrompt(mapped.text, mapped.imagePaths);
 	}
 
 	async function onUpdate(update: TelegramUpdate): Promise<void> {
 		cursorCache = update.update_id;
-		if (update.callback_query && dialog) {
-			await dialog.handleCallbackQuery(update.callback_query);
+		if (update.callback_query) {
+			await askController?.handleCallbackQuery(update.callback_query);
 			return;
 		}
 		const message = update.message;
@@ -465,6 +475,7 @@ export default function pigram(pi: ExtensionAPI): void {
 
 		try {
 			transport = createHttpTransport({ botToken: config.botToken });
+			askController = new TelegramAskController({ transport });
 			if (paths && lockPath) {
 				const state = await readState(paths);
 				state.botId = me.id;
@@ -518,6 +529,12 @@ export default function pigram(pi: ExtensionAPI): void {
 	}
 
 	function stopPolling(): void {
+		// A pending Telegram question belongs to the polling runtime: tearing
+		// the bridge down cancels it and clears turn ownership so a later
+		// reconnect starts clean. Idempotent with session_shutdown's own
+		// cleanup.
+		askController?.cancel();
+		askController?.endTurn();
 		stopHeartbeat?.();
 		stopHeartbeat = undefined;
 		// Best-effort lock release; stale recovery handles crash cases.
@@ -750,7 +767,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		},
 	});
 
-	// --- Register the telegram_attach tool ---
+	// --- Register the Telegram tools ---
+	registerTelegramAskTool(pi, () => askController);
 	pi.registerTool({
 		name: "telegram_attach",
 		label: "Telegram Attach",
@@ -775,8 +793,8 @@ export default function pigram(pi: ExtensionAPI): void {
 		},
 	});
 
-	// Initialise the dialog manager lazily once a chat is known is handled inside
-	// startPolling via transport; create it here bound to the active chat on first use.
+	// Telegram-native questions are created per polling runtime and bound to the
+	// active Telegram turn, not to the last chat seen by the bridge.
 	pi.on("session_start", async (_event, ctx) => {
 		// Event handlers receive the plain ExtensionContext — store it as such.
 		// newSession/withSession come only from command handlers; /new degrades
@@ -785,9 +803,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		await loadConfig(ctx.cwd).catch(() => undefined);
 		if (config?.botToken) {
 			await startPolling().catch(() => undefined);
-			if (transport && activeChatId !== undefined) {
-				dialog = new DialogManager({ transport, chatId: activeChatId });
-			}
+
 		}
 
 		// If this session was created by a Telegram /new, a reconnect-request
@@ -818,6 +834,8 @@ export default function pigram(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async () => {
 		stopPolling();
 		// Abandon any in-flight turn state from the old session.
+		askController?.cancel();
+		askController?.endTurn();
 		activeTurn = undefined;
 		followUps.clear();
 		lastReplyMarkdown = undefined;
@@ -907,8 +925,9 @@ export default function pigram(pi: ExtensionAPI): void {
 		}
 
 		// Drain one queued follow-up, if any, starting a fresh turn.
+		askController?.endTurn();
 		const next = followUps.dequeue();
-		if (next) await deliverPrompt(turn.chatId, next);
+		if (next) await deliverPrompt(turn.chatId, turn.userId, next);
 	});
 }
 
