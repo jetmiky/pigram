@@ -102,7 +102,43 @@ describe("TelegramTransport", () => {
 		expect(body).toEqual({ offset: 100, timeout: 30 });
 	});
 
-	test("getUpdates accepts AbortSignal", async () => {
+	test("getUpdates aborts a request that outlives the server long-poll timeout", async () => {
+		let requestSignal: AbortSignal | undefined;
+		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+			requestSignal = init?.signal ?? undefined;
+			return new Promise((_resolve, reject) => {
+				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+			});
+		};
+		const transport = createHttpTransport({
+			botToken: TOKEN,
+			fetchImpl,
+			getUpdatesTimeoutMarginMs: 10,
+		});
+
+		await expect(transport.getUpdates({ offset: 1, timeout: 0 })).rejects.toBeDefined();
+		expect(requestSignal?.aborted).toBe(true);
+	});
+
+	test("getUpdates lifecycle cancellation aborts a pending request promptly", async () => {
+		let requestSignal: AbortSignal | undefined;
+		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+			requestSignal = init?.signal ?? undefined;
+			return new Promise((_resolve, reject) => {
+				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+			});
+		};
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl });
+		const controller = new AbortController();
+		const pending = transport.getUpdates({ offset: 1, timeout: 30 }, controller.signal);
+
+		controller.abort();
+
+		await expect(pending).rejects.toBeDefined();
+		expect(requestSignal?.aborted).toBe(true);
+	});
+
+	test("getUpdates uses a request signal without replacing the lifecycle signal", async () => {
 		const fake = new FakeFetch();
 		fake.queueResponse({ ok: true, result: [] });
 
@@ -111,7 +147,9 @@ describe("TelegramTransport", () => {
 		await transport.getUpdates({ offset: 1 }, controller.signal);
 
 		const call = fake.lastCall();
-		expect(call.init?.signal).toBe(controller.signal);
+		expect(call.init?.signal).toBeInstanceOf(AbortSignal);
+		expect(call.init?.signal).not.toBe(controller.signal);
+		expect(call.init?.signal?.aborted).toBe(false);
 	});
 
 	test("sendMessage posts chat_id, text, parse_mode and returns message_id", async () => {
