@@ -181,4 +181,21 @@ describe("telegram_ask extension tool boundary", () => {
 			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 } as never),
 		).rejects.toThrow("timeoutSeconds must be between 15 and 900");
 	});
+
+	test("hasPendingText is true only while a text question waits", async () => {
+		const transport = new FakeTransport();
+		const controller = new TelegramAskController({ transport, idGen: () => "ask-10" });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+		expect(controller.hasPendingText()).toBe(false);
+
+		const text = runTool(controller, { kind: "text", question: "Name?" });
+		expect(controller.hasPendingText()).toBe(true);
+		expect(controller.handleText("Alice", { chatId: 42, userId: 7 })).toBe(true);
+		await text;
+		expect(controller.hasPendingText()).toBe(false);
+
+		runTool(controller, { kind: "select", question: "Pick", options: [{ label: "A", value: "a" }] });
+		// A select question is pending, but not a text question.
+		expect(controller.hasPendingText()).toBe(false);
+	});
 });

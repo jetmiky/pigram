@@ -89,6 +89,11 @@ export class TelegramAskController {
 		return true;
 	}
 
+	/** Whether a text-kind question is currently waiting for an answer. */
+	hasPendingText(): boolean {
+		return this.pending !== undefined && this.pending.params.kind === "text";
+	}
+
 	async handleCallbackQuery(query: TelegramCallbackQuery): Promise<boolean> {
 		const data = query.data;
 		if (!data) return false;

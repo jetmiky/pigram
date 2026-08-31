@@ -43,7 +43,7 @@ import {
 	formatBotFatherCommands,
 	UNKNOWN_COMMAND_MESSAGE,
 } from "./domain/commands.js";
-import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
+import { mapInboundMessage, routeInboundText, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
 import { getGitExecSpec, runGitSpec, type GitRunResult } from "./domain/git.js";
 import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
 import {
@@ -375,10 +375,18 @@ export default function pigram(pi: ExtensionAPI): void {
 		}
 		activeChatId = chatId;
 
-		// Commands retain priority over a pending text question. Lifecycle commands
-		// (/stop and /new) cancel the question in their command handlers.
-		if (msg.text && (await handleCommand(chatId, msg.text))) return;
-		if (msg.text && askController?.handleText(msg.text, { chatId, userId })) return;
+		// Commands retain priority over a pending text question. Lifecycle
+		// commands (/stop and /new) cancel the question in their command
+		// handlers; non-lifecycle commands leave it pending for the next
+		// eligible message.
+		if (msg.text) {
+			const route = routeInboundText(msg.text, askController?.hasPendingText() ?? false);
+			if (route === "command") {
+				if (await handleCommand(chatId, msg.text)) return;
+			} else if (route === "dialog_answer") {
+				if (askController?.handleText(msg.text, { chatId, userId })) return;
+			}
+		}
 
 		// Otherwise forward to pi as a prompt (queue if a turn is in flight).
 		if (activeTurn) {
