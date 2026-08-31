@@ -392,13 +392,13 @@ export default function pigram(pi: ExtensionAPI): void {
 		// immediately; the reply arrives later via message_update / agent_end.
 		const streamPreviews = config?.ux?.streamPreviews ?? DEFAULT_UX.streamPreviews;
 		const richText = config?.ux?.richText ?? DEFAULT_UX.richText;
-		// Previews only make sense when both rich text and previews are on and we
-		// have a transport: the preview streams plain partials then finalizes to
-		// rich HTML on the same message.
+		// A reply session owns final rich delivery whenever rich text is enabled.
+		// streamPreviews controls only whether partial updates are emitted.
 		const preview =
-			streamPreviews && richText && transport
+			richText && transport
 				? new PreviewSession(chatId, {
 						transport,
+						streamPreviews,
 						// Rich tables off → the session never attempts the rich path.
 						richTables: config?.ux?.richTables ?? DEFAULT_UX.richTables,
 					})
