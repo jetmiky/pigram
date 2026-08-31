@@ -293,6 +293,19 @@ export function createHttpTransport(opts: {
 			if (opts.offset !== undefined) body.offset = opts.offset;
 			if (opts.timeout !== undefined) body.timeout = opts.timeout;
 
+			// Telegram persists the allowed_updates setting per bot token when
+			// the parameter is omitted ("previous setting is used"), so an
+			// earlier client that restricted it would silently suppress
+			// callback_query delivery while messages keep flowing. Always pin
+			// the update types this bridge handles.
+			body.allowed_updates = [
+				"message",
+				"edited_message",
+				"channel_post",
+				"edited_channel_post",
+				"callback_query",
+			];
+
 			// Telegram's timeout is server-side only. Bound the client request too,
 			// with enough margin for Telegram to answer after its long poll expires.
 			const serverTimeoutMs = (opts.timeout ?? 0) * 1000;
