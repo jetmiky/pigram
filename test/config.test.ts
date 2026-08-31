@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { validateConfig, DEFAULT_UX } from "../src/config/schema";
+import { validateConfig, DEFAULT_DELIVERY, DEFAULT_UX } from "../src/config/schema";
 
 describe("PigramConfig validation", () => {
   test("valid minimal config (botToken only) applies UX defaults", () => {
@@ -14,6 +14,7 @@ describe("PigramConfig validation", () => {
         streamPreviews: true,
         richTables: true,
       });
+      expect(result.config.delivery).toEqual({ terminalReplies: "off" });
     }
   });
 
@@ -111,5 +112,20 @@ describe("PigramConfig validation", () => {
         richTables: true, // defaulted
       });
     }
+  });
+
+  test("accepts automatic delivery of terminal replies", () => {
+    const result = validateConfig({ botToken: "token", delivery: { terminalReplies: "all" } });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.config.delivery).toEqual({ terminalReplies: "all" });
+  });
+
+  test("rejects unknown terminal reply delivery modes", () => {
+    const result = validateConfig({ botToken: "token", delivery: { terminalReplies: "sometimes" } });
+    expect(result.ok).toBe(false);
+  });
+
+  test("exports the backwards-compatible delivery default", () => {
+    expect(DEFAULT_DELIVERY).toEqual({ terminalReplies: "off" });
   });
 });

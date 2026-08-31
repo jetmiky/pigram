@@ -22,11 +22,25 @@ export const DEFAULT_UX: UxPreferences = {
   richTables: true,
 };
 
+export const DeliveryPreferencesSchema = Type.Object(
+  {
+    terminalReplies: Type.Optional(Type.Union([Type.Literal("off"), Type.Literal("all")])),
+  },
+  { additionalProperties: false }
+);
+
+export type DeliveryPreferences = Static<typeof DeliveryPreferencesSchema>;
+
+export const DEFAULT_DELIVERY: DeliveryPreferences = {
+  terminalReplies: "off",
+};
+
 // Config is the user-edited settings: bot token and UX preferences
 export const PigramConfigSchema = Type.Object(
   {
     botToken: Type.String({ minLength: 1 }),
     ux: Type.Optional(UxPreferencesSchema),
+    delivery: Type.Optional(DeliveryPreferencesSchema),
   },
   { additionalProperties: false }
 );
@@ -50,6 +64,9 @@ export function validateConfig(input: unknown): ValidationResult {
   const config: PigramConfig = {
     ...input,
     ux: input.ux ? { ...DEFAULT_UX, ...input.ux } : { ...DEFAULT_UX },
+    delivery: input.delivery
+      ? { ...DEFAULT_DELIVERY, ...input.delivery }
+      : { ...DEFAULT_DELIVERY },
   };
 
   return { ok: true, config };

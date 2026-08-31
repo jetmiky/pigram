@@ -112,6 +112,24 @@ next completed turn only; `/pigram-notify on` keeps delivering every reply
 until `/pigram-notify off`. The target chat is the last active chat, falling
 back to the paired user's DM. State resets with the session (`/new`, exit).
 
+To deliver every final assistant reply from terminal-originated turns without
+running `/pigram-notify`, add this to `.pi/pigram.json`:
+
+```json
+{
+  "botToken": "123456:ABCDEF...",
+  "delivery": {
+    "terminalReplies": "all"
+  }
+}
+```
+
+`terminalReplies` accepts `"off"` (the default) or `"all"`. It sends the final
+reply or error to the paired user's DM; replies to Telegram-originated turns
+continue through the normal path and are not duplicated. Attachments queued by
+terminal turns are sent to the same chat. `/pigram-notify on|off` overrides the
+setting for the current session; `/pigram-notify` still arms only the next reply.
+
 ---
 
 ## How it works
@@ -126,7 +144,7 @@ Telegram  ⇄  Transport (Bot API)  ⇄  Poller  ⇄  Bridge  ⇄  pi session
 
 Configuration and runtime state are kept strictly separate:
 
-- **Config** (`.pi/pigram.json`) — user-edited: bot token + UX preferences.
+- **Config** (`.pi/pigram.json`) — user-edited: bot token, UX preferences, and delivery policy.
 - **State** (`.pi/tmp/pigram/state.json`) — machine-managed: update cursor, paired user, bot identity. Never hand-edited, always git-ignored.
 
 See [`CONTEXT.md`](./CONTEXT.md) for the domain glossary and [`docs/adr/`](./docs/adr) for the architecture decisions (why session-local, the config shape, the package scope).

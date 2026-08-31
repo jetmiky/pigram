@@ -25,6 +25,23 @@ export interface PendingNotify {
 	chatId: number;
 }
 
+/** A session command can explicitly suppress config-driven delivery. */
+export type NotifyOverride = PendingNotify | "off";
+
+/** Resolve the effective request for a terminal-originated turn. */
+export function resolveNotifyRequest(
+	override: NotifyOverride | undefined,
+	configured: "off" | "all",
+	pairedChatId: number | undefined,
+): PendingNotify | undefined {
+	if (override === "off") return undefined;
+	if (override) return override;
+	if (configured === "all" && pairedChatId !== undefined) {
+		return { mode: "sticky", chatId: pairedChatId };
+	}
+	return undefined;
+}
+
 /** The parsed result of the /pigram-notify command arguments. */
 export type ParsedNotifyArgs =
 	| { ok: true; mode: NotifyMode | "off" }

@@ -30,7 +30,7 @@ import {
 	startHeartbeat,
 } from "./config/lock.js";
 import { migrateLegacyConfig } from "./config/migrate.js";
-import { DEFAULT_UX, type PigramConfig } from "./config/schema.js";
+import { DEFAULT_DELIVERY, DEFAULT_UX, type PigramConfig } from "./config/schema.js";
 import { createHttpTransport, type TelegramTransport, type TelegramUpdate } from "./telegram/transport.js";
 import { TelegramPoller } from "./telegram/poller.js";
 import { DialogManager } from "./telegram/dialog.js";
@@ -46,7 +46,12 @@ import {
 import { mapInboundMessage, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
 import { getGitExecSpec, runGitSpec, type GitRunResult } from "./domain/git.js";
 import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
-import { parseNotifyArgs, consumePendingNotify, type PendingNotify } from "./domain/notify.js";
+import {
+	parseNotifyArgs,
+	consumePendingNotify,
+	resolveNotifyRequest,
+	type NotifyOverride,
+} from "./domain/notify.js";
 import {
 	findPendingReconnectRequest,
 	formatNewSessionConfirmation,
@@ -109,7 +114,7 @@ export default function pigram(pi: ExtensionAPI): void {
 	// delivery; "sticky" mode keeps delivering until turned off or the session
 	// resets. Cleared at every session-reset boundary alongside
 	// lastReplyMarkdown (see /new and session_shutdown).
-	let pendingNotify: PendingNotify | undefined;
+	let pendingNotify: NotifyOverride | undefined;
 
 	const followUps = new FollowUpQueue();
 	const attachments = new AttachmentQueue();
@@ -679,12 +684,15 @@ export default function pigram(pi: ExtensionAPI): void {
 				`config: ${paths?.configPath ?? "not loaded"}`,
 				`scope: ${paths?.scope ?? "n/a"}`,
 				`paired user: ${pairing.pairedUserId ?? "not paired"}`,
-				`notify: ${
+				`terminal replies: ${config?.delivery?.terminalReplies ?? DEFAULT_DELIVERY.terminalReplies}`,
+				`notify override: ${
 					pendingNotify === undefined
-						? "off"
+						? "none"
+						: pendingNotify === "off"
+							? "off"
 						: pendingNotify.mode === "once"
-							? "armed (next reply → Telegram)"
-							: "on (sticky)"
+							? "next reply"
+							: "all"
 				}`,
 				`polling: ${
 					pollingActive
@@ -711,7 +719,7 @@ export default function pigram(pi: ExtensionAPI): void {
 				return;
 			}
 			if (parsed.mode === "off") {
-				pendingNotify = undefined;
+				pendingNotify = "off";
 				ctx.ui.notify("Pigram notify: off", "info");
 				return;
 			}
@@ -838,20 +846,32 @@ export default function pigram(pi: ExtensionAPI): void {
 		// the prompt came from Telegram the reply is delivered by the normal
 		// path below (and a "once" request counts as satisfied); delivering
 		// here only makes sense for laptop prompts without an active turn.
-		const consumed = consumePendingNotify(
+		const effectiveNotify = resolveNotifyRequest(
 			pendingNotify,
+			config?.delivery?.terminalReplies ?? DEFAULT_DELIVERY.terminalReplies ?? "off",
+			pairing.pairedUserId ?? undefined,
+		);
+		const consumed = consumePendingNotify(
+			effectiveNotify,
 			// exactOptionalPropertyTypes: only include fields that are defined.
 			{
 				...(resolved.text ? { text: resolved.text } : {}),
 				...(resolved.errorMessage ? { errorMessage: resolved.errorMessage } : {}),
 			},
 		);
-		pendingNotify = consumed.pending;
+		// Only mutate explicit command state. Config-driven "all" remains a
+		// policy and is re-resolved on each turn rather than becoming an override.
+		if (pendingNotify !== undefined && pendingNotify !== "off") {
+			pendingNotify = consumed.pending;
+		}
 		if (!turn && consumed.deliver) {
 			if (consumed.deliver.kind === "text") {
 				await sendMarkdown(consumed.deliver.chatId, consumed.deliver.markdown);
 			} else {
 				await sendPlain(consumed.deliver.chatId, consumed.deliver.line);
+			}
+			if (transport) {
+				await flushAttachments(attachments, transport, consumed.deliver.chatId).catch(() => undefined);
 			}
 		}
 
