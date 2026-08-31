@@ -199,7 +199,11 @@ export class TelegramAskController {
 			messageId,
 			text: `${pending.params.question}\n${suffix}`,
 			replyMarkup: { inline_keyboard: [] },
-		})).catch(() => undefined);
+		})).catch((error) => {
+			// Non-fatal: the answer is preserved. Surface for diagnostics
+			// rather than swallowing cleanup failures silently.
+			console.error("telegram_ask: prompt cleanup failed", error);
+		});
 		pending.resolve(outcome);
 	}
 }

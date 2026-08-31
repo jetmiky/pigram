@@ -11,9 +11,11 @@ class FakeTransport implements Pick<TelegramTransport, "sendMessage" | "editMess
 	editMessageTextCalls: Array<{ chatId: number; messageId: number; text: string; replyMarkup?: unknown }> = [];
 	answerCallbackQueryCalls: Array<{ callbackQueryId: string; text?: string }> = [];
 	failEdits = false;
+	failSends = false;
 
 	async sendMessage(opts: { chatId: number; text: string; replyMarkup?: unknown }) {
 		this.sendMessageCalls.push(opts);
+		if (this.failSends) throw new Error("send failed");
 		return { message_id: 99 };
 	}
 	async editMessageText(opts: { chatId: number; messageId: number; text: string; replyMarkup?: unknown }) {
@@ -137,5 +139,46 @@ describe("telegram_ask extension tool boundary", () => {
 		expect(await controller.handleCallbackQuery(query("not-dialog-data"))).toBe(false);
 		expect(await controller.handleCallbackQuery(query("old:0"))).toBe(true);
 		expect(transport.answerCallbackQueryCalls[0]?.text).toBe("Dialog expired");
+	});
+
+	test("confirm Yes resolves to true", async () => {
+		const transport = new FakeTransport();
+		const controller = new TelegramAskController({ transport, idGen: () => "ask-7" });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+		const pending = runTool(controller, { kind: "confirm", question: "Proceed?" });
+
+		await controller.handleCallbackQuery(query("ask-7:0"));
+		expect((await pending).details).toEqual({ status: "answered", value: true });
+		expect(transport.editMessageTextCalls[0]?.text).toBe("Proceed?\n✓ Yes");
+	});
+
+	test("send failure surfaces as an operational tool error and settles state", async () => {
+		const transport = new FakeTransport();
+		const controller = new TelegramAskController({ transport, idGen: () => "ask-8" });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+		transport.failSends = true;
+
+		await expect(runTool(controller, { kind: "text", question: "Fail" })).rejects.toThrow("send failed");
+		// The failed request must not remain pending: a follow-up dialog works.
+		transport.failSends = false;
+		const next = runTool(controller, { kind: "text", question: "After failure" });
+		expect(controller.handleText("ok", { chatId: 42, userId: 7 })).toBe(true);
+		expect((await next).details).toEqual({ status: "answered", value: "ok" });
+	});
+
+	test("parameter validation rejects invalid shapes at the tool boundary", async () => {
+		const transport = new FakeTransport();
+		const controller = new TelegramAskController({ transport, idGen: () => "ask-9" });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+
+		await expect(runTool(controller, { kind: "select", question: "x", options: [] })).rejects.toThrow(
+			"select requires at least one option",
+		);
+		await expect(
+			runTool(controller, { kind: "confirm", question: "x", options: [{ label: "A", value: "a" }] } as never),
+		).rejects.toThrow("confirm does not accept options");
+		await expect(
+			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 } as never),
+		).rejects.toThrow("timeoutSeconds must be between 15 and 900");
 	});
 });
