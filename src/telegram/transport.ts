@@ -208,8 +208,18 @@ export interface TelegramTransport {
 export function createHttpTransport(opts: {
 	botToken: string;
 	fetchImpl?: typeof fetch;
+	/**
+	 * Extra time beyond Telegram's server-side long-poll timeout before aborting
+	 * a stuck getUpdates request. Injectable to keep timeout tests fast.
+	 * Defaults to 10 seconds.
+	 */
+	getUpdatesTimeoutMarginMs?: number;
 }): TelegramTransport {
-	const { botToken, fetchImpl = globalThis.fetch } = opts;
+	const {
+		botToken,
+		fetchImpl = globalThis.fetch,
+		getUpdatesTimeoutMarginMs = 10_000,
+	} = opts;
 
 	/**
 	 * Call a Telegram Bot API method with JSON body.
@@ -283,8 +293,12 @@ export function createHttpTransport(opts: {
 			if (opts.offset !== undefined) body.offset = opts.offset;
 			if (opts.timeout !== undefined) body.timeout = opts.timeout;
 
-			const callOptions = signal ? { signal } : undefined;
-			return callTelegram<TelegramUpdate[]>("getUpdates", body, callOptions);
+			// Telegram's timeout is server-side only. Bound the client request too,
+			// with enough margin for Telegram to answer after its long poll expires.
+			const serverTimeoutMs = (opts.timeout ?? 0) * 1000;
+			const deadlineSignal = AbortSignal.timeout(serverTimeoutMs + getUpdatesTimeoutMarginMs);
+			const requestSignal = signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal;
+			return callTelegram<TelegramUpdate[]>("getUpdates", body, { signal: requestSignal });
 		},
 
 		async sendMessage(opts) {
