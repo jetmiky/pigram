@@ -52,7 +52,10 @@ pi -e ./node_modules/@jetmiky/pigram/dist/index.js
    /pigram-setup
    ```
 
-   Paste the token when prompted. Pigram validates it against Telegram, stores it, prints a BotFather `/setcommands` block, and starts the bridge.
+   Paste the token when prompted. Pigram validates it against Telegram, then
+   asks whether every final assistant reply from terminal turns should be sent
+   automatically to Telegram. It stores your choices, prints a BotFather
+   `/setcommands` block, and starts the bridge.
 3. Open your bot in Telegram and send `/start` to pair your account.
 
 Done. Send any message and it's forwarded to pi.

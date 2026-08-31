@@ -627,7 +627,16 @@ export default function pigram(pi: ExtensionAPI): void {
 			return;
 		}
 
-		config = { botToken: token, ux: { ...DEFAULT_UX } };
+		const forwardTerminalReplies = await ctx.ui.confirm(
+			"Terminal reply delivery",
+			"Automatically send every final assistant reply from terminal turns to Telegram?",
+		);
+
+		config = {
+			botToken: token,
+			ux: config?.ux ?? { ...DEFAULT_UX },
+			delivery: { terminalReplies: forwardTerminalReplies ? "all" : "off" },
+		};
 		await writeConfig(paths, config);
 		if (paths.scope === "project") {
 			await ensureProjectGitignore(ctx.cwd);
