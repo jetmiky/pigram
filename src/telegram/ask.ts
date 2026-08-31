@@ -39,6 +39,7 @@ type Pending = {
 	resolve: (outcome: TelegramAskOutcome) => void;
 	settled: boolean;
 	timer?: ReturnType<typeof setTimeout>;
+	signal?: AbortSignal;
 	onAbort: (() => void) | undefined;
 };
 
@@ -151,6 +152,7 @@ export class TelegramAskController {
 			const timeoutMs = this.timeoutMsOverride ?? (params.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
 			pending.timer = setTimeout(() => this.finish(pending, { status: "timeout" }, "⌛ Timed out"), timeoutMs);
 			if (signal) {
+				pending.signal = signal;
 				const onAbort = () => this.finish(pending, { status: "cancelled" }, "❌ Cancelled");
 				pending.onAbort = onAbort;
 				if (signal.aborted) onAbort();
@@ -159,7 +161,8 @@ export class TelegramAskController {
 			messageId.catch((error) => {
 				if (this.pending === pending) this.pending = undefined;
 				if (pending.timer) clearTimeout(pending.timer);
-				if (pending.onAbort && signal) signal.removeEventListener("abort", pending.onAbort);
+				if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
+				pending.onAbort = undefined;
 				reject(error);
 			});
 		});
@@ -189,7 +192,8 @@ export class TelegramAskController {
 		pending.settled = true;
 		if (this.pending === pending) this.pending = undefined;
 		if (pending.timer) clearTimeout(pending.timer);
-		if (pending.onAbort) pending.onAbort = undefined;
+		if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
+		pending.onAbort = undefined;
 		void pending.messageId.then((messageId) => this.transport.editMessageText({
 			chatId: pending.owner.chatId,
 			messageId,

@@ -521,6 +521,12 @@ export default function pigram(pi: ExtensionAPI): void {
 	}
 
 	function stopPolling(): void {
+		// A pending Telegram question belongs to the polling runtime: tearing
+		// the bridge down cancels it and clears turn ownership so a later
+		// reconnect starts clean. Idempotent with session_shutdown's own
+		// cleanup.
+		askController?.cancel();
+		askController?.endTurn();
 		stopHeartbeat?.();
 		stopHeartbeat = undefined;
 		// Best-effort lock release; stale recovery handles crash cases.
