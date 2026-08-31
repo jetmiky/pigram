@@ -99,7 +99,23 @@ describe("TelegramTransport", () => {
 		expect(updates[0]?.message?.text).toBe("hello");
 
 		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({ offset: 100, timeout: 30 });
+		expect(body).toEqual({
+			offset: 100,
+			timeout: 30,
+			allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
+		});
+	});
+
+	test("getUpdates always pins allowed_updates including callback_query", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: [] });
+
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+		await transport.getUpdates({ offset: 1 });
+
+		const body = await fake.lastBodyAsJson();
+		expect(body.allowed_updates).toContain("callback_query");
+		expect(body.allowed_updates).toContain("message");
 	});
 
 	test("getUpdates aborts a request that outlives the server long-poll timeout", async () => {
