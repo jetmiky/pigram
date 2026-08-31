@@ -1,6 +1,6 @@
 # Pigram
 
-> Chat with the [pi coding agent](https://github.com/badlogic/pi) from Telegram — rich text, streaming previews, file attachments, and native inline-keyboard dialogs.
+> Chat with the [pi coding agent](https://github.com/badlogic/pi) from Telegram — rich text, streaming previews, session controls, and generated-file delivery.
 
 Pigram is a **session-local** Telegram bridge for pi. It runs inside your pi session: no daemon, no background service, no extra process to babysit. Start pi, run one command, message your bot. When the pi session ends, the bridge stops with it.
 
@@ -15,8 +15,9 @@ Pigram is a **session-local** Telegram bridge for pi. It runs inside your pi ses
 - **Session-local by design.** The bridge lives and dies with your pi session. No installer, no `systemd` unit, no orphaned daemon polling Telegram while you sleep.
 - **Rich output.** pi's markdown is converted to Telegram HTML — code blocks, bold, links, lists, all rendered natively.
 - **Streaming previews.** Watch pi's reply build in real time via message edits, instead of waiting for the whole turn.
-- **File attachments.** pi can send you generated files directly through the `telegram_attach` tool.
-- **Native dialogs.** Inline-keyboard selects, confirms, and text inputs — pi can ask you a question mid-task and you tap an answer.
+- **Generated-file delivery.** pi can send up to 10 existing local files per turn through the `telegram_attach` tool.
+- **Busy-turn queueing.** Messages sent while pi is working are queued and processed in order after the active turn.
+- **Resilient polling.** A per-bot lock prevents competing pollers; bounded long polls, conflict backoff, and stale-lock recovery keep inbound delivery healthy.
 - **Single-user pairing.** The first account to send `/start` is paired; everyone else is ignored. No allowlist to maintain.
 
 ---
@@ -61,6 +62,15 @@ pi -e ./node_modules/@jetmiky/pigram/dist/index.js
 Done. Send any message and it's forwarded to pi.
 
 > **Scope:** by default the config is stored per-project (`.pi/pigram.json`, automatically git-ignored). Use `/pigram-setup global` to store it in your home directory and reuse it across projects.
+
+### Updating and uninstalling
+
+```bash
+pi update @jetmiky/pigram
+pi remove @jetmiky/pigram
+```
+
+After updating, start a fresh pi session so the new extension bundle is loaded.
 
 ---
 
@@ -133,6 +143,112 @@ continue through the normal path and are not duplicated. Attachments queued by
 terminal turns are sent to the same chat. `/pigram-notify on|off` overrides the
 setting for the current session; `/pigram-notify` still arms only the next reply.
 
+### Generated files
+
+Pigram registers the `telegram_attach` tool for pi. When a Telegram user asks
+for a generated artifact, pi can call it with one or more local paths. Files
+must already exist; directories are rejected. Up to 10 files may be attached
+per turn, and known-chat deliveries are flushed immediately.
+
+## Rich output settings
+
+Pigram's output controls are independent. In particular, disabling streamed
+previews does **not** disable rich formatting or native tables in the final
+reply:
+
+```json
+{
+  "botToken": "123456:ABCDEF...",
+  "ux": {
+    "richText": true,
+    "streamPreviews": false,
+    "richTables": true
+  }
+}
+```
+
+| Setting | Default | Effect |
+|---|---:|---|
+| `ux.richText` | `true` | Render final Markdown as Telegram formatting. When disabled, replies are sent as chunked plain text. |
+| `ux.streamPreviews` | `true` | Show partial assistant output by editing a live Telegram message. When disabled, Pigram shows only the final reply; typing indicators still provide liveness feedback. |
+| `ux.richTables` | `true` | For final replies containing a GFM pipe table, try Telegram's native bordered, horizontally scrollable table. This works whether previews are on or off. |
+
+With `richText` enabled, final replies support headings, bold, italic, links,
+inline code, fenced code blocks, blockquotes, ordered and unordered lists,
+task-list checkboxes, separators, and hard line breaks. A GFM table such as:
+
+```markdown
+| Name | Status |
+|---|---|
+| Build | Passing |
+```
+
+is sent through Telegram's native rich-message API when `richTables` is enabled.
+If Telegram rejects or does not support that rich message, Pigram falls back to
+a horizontally scrollable monospace `<pre>` grid. Setting `richTables` to
+`false` uses that HTML fallback directly. Tables inside fenced code blocks are
+kept as example code and are not treated as renderable tables.
+
+| `streamPreviews` | `richTables` | Table result |
+|---:|---:|---|
+| `true` | `true` | Stream partial text, then replace it with the native final table. |
+| `false` | `true` | Send no partial text; send the native table when the turn finishes. |
+| `true` | `false` | Stream partial text, then replace it with the HTML/monospace table. |
+| `false` | `false` | Send no partial text; send the HTML/monospace table when finished. |
+
+### Complete configuration reference
+
+The config accepts only the keys shown below; unknown keys are rejected:
+
+```json
+{
+  "botToken": "123456:ABCDEF...",
+  "ux": {
+    "richText": true,
+    "streamPreviews": true,
+    "richTables": true
+  },
+  "delivery": {
+    "terminalReplies": "off"
+  }
+}
+```
+
+Project config (`.pi/pigram.json`) takes precedence when present. Global config
+(`~/.pi/agent/pigram.json`) is the fallback and can be selected explicitly with
+`/pigram-setup global` or `/pigram-connect global`. Runtime state is kept under
+the matching `.pi/tmp/pigram/` or `~/.pi/agent/tmp/pigram/` directory; it stores
+pairing, the Telegram update cursor, and bot identity and must not be edited by
+hand.
+
+## Reliability and limitations
+
+- Only the first paired Telegram user is accepted; Pigram is intentionally
+  single-user.
+- Only text messages are currently forwarded as prompts. Telegram photos,
+  documents, and voice messages are not yet wired into inbound prompt delivery.
+- If a second process tries to poll the same bot, Pigram reports the lock holder
+  instead of starting a competing `getUpdates` request.
+- Messages arriving while pi is busy are queued FIFO and handled after the
+  current turn.
+- `/new` may ask you to run `/pigram-connect` once in the pi terminal when the
+  current runtime has not yet received a command-capable pi context.
+- Pigram stops polling when the pi session shuts down; there is no daemon or
+  cross-session background delivery.
+
+## Troubleshooting
+
+- **Bot does not respond:** run `/pigram-status` in pi and check `polling`, the
+  config path, and whether another PID holds the bot lock.
+- **Bad or replaced bot token:** rerun `/pigram-setup [local|global]`; setup
+  validates the token with Telegram before storing it.
+- **Telegram `/new` cannot reset the session:** run `/pigram-connect` once in
+  the pi terminal, then retry `/new` from Telegram.
+- **No terminal reply arrives:** pair the bot first with `/start`, then use
+  `/pigram-notify` or set `delivery.terminalReplies` to `"all"`.
+- **Native table fails:** Pigram automatically falls back to a monospace table;
+  set `ux.richTables` to `false` to skip native delivery deliberately.
+
 ---
 
 ## How it works
@@ -163,6 +279,8 @@ If you used the original `pi-telegram`, Pigram reads your old `telegram.json` au
 ## Development
 
 ```bash
+git clone https://github.com/jetmiky/pigram.git
+cd pigram
 bun install
 bun test          # run the test suite
 bun run typecheck # tsc --noEmit
@@ -170,6 +288,30 @@ bun run build     # bundle ESM to dist/ (peer deps stay external)
 ```
 
 Built with TypeScript, tested with `bun test`, output as ESM for Node 22+. Peer dependencies (pi packages, typebox, marked) are kept external so the published bundle stays tiny and shares the host's pi runtime.
+
+### Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
+
+1. Search [existing issues](https://github.com/jetmiky/pigram/issues) and open
+   one for non-trivial behavioural changes so scope can be agreed first.
+2. Branch from an up-to-date `main` using `fix/...`, `feat/...`, or `docs/...`.
+3. Add or update tests through public behaviour; keep the change focused and
+   avoid unrelated refactors.
+4. Run `bun test`, `bun run typecheck`, and `bun run build`.
+5. Use a Conventional Commit such as `fix(telegram): handle ...` or
+   `docs: explain ...`.
+6. Open a PR describing the observable change, verification performed, and the
+   issue it closes.
+
+For architecture vocabulary and constraints, read [`CONTEXT.md`](./CONTEXT.md)
+and the decisions in [`docs/adr/`](./docs/adr). Please do not commit bot tokens,
+local `.pi/pigram.json` files, runtime state, generated bundles unrelated to the
+change, or npm credentials.
+
+Maintainer releases are cut from clean `main`: run the full verification suite,
+bump with `npm version patch|minor|major`, push the release commit and tag, create
+a GitHub release, then publish the same version to npm.
 
 ---
 
