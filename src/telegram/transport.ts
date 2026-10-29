@@ -201,6 +201,34 @@ export interface TelegramTransport {
 	downloadFile(opts: { fileId: string; destPath: string }): Promise<string>;
 }
 
+interface TelegramUpdatesBody {
+	offset?: number;
+	timeout?: number;
+	allowed_updates?: string[];
+}
+
+interface TelegramMessageBody {
+	chat_id: number;
+	message_id?: number;
+	text?: string;
+	parse_mode?: "HTML";
+	reply_markup?: unknown;
+	rich_message?: { markdown: string };
+	action?: "typing" | "upload_document" | "upload_photo";
+}
+
+interface TelegramCallbackBody {
+	callback_query_id: string;
+	text?: string;
+}
+
+interface TelegramFileFields {
+	chat_id: string;
+	caption?: string;
+}
+
+type TelegramRequestBody = TelegramUpdatesBody | TelegramMessageBody | TelegramCallbackBody | { file_id: string };
+
 /**
  * Create an HTTP-based Telegram transport.
  * fetchImpl is injectable for testing.
@@ -226,7 +254,7 @@ export function createHttpTransport(opts: {
 	 */
 	async function callTelegram<TResponse>(
 		method: string,
-		body: Record<string, unknown>,
+		body: TelegramRequestBody,
 		options?: { signal?: AbortSignal },
 	): Promise<TResponse> {
 		const fetchOptions: RequestInit = {
@@ -255,7 +283,7 @@ export function createHttpTransport(opts: {
 	 */
 	async function callTelegramMultipart<TResponse>(
 		method: string,
-		fields: Record<string, string>,
+		fields: TelegramFileFields,
 		fileField: string,
 		filePath: string,
 		fileName: string,
@@ -294,7 +322,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async getUpdates(opts, signal) {
-			const body: Record<string, unknown> = {};
+			const body: TelegramUpdatesBody = {};
 
 			if (opts.offset !== undefined) body.offset = opts.offset;
 
@@ -323,7 +351,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async sendMessage(opts) {
-			const body: Record<string, unknown> = {
+			const body: TelegramMessageBody = {
 				chat_id: opts.chatId,
 				text: opts.text,
 			};
@@ -336,7 +364,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async editMessageText(opts) {
-			const body: Record<string, unknown> = {
+			const body: TelegramMessageBody = {
 				chat_id: opts.chatId,
 				message_id: opts.messageId,
 				text: opts.text,
@@ -365,7 +393,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async sendChatAction(opts) {
-			const body: Record<string, unknown> = {
+			const body: TelegramMessageBody = {
 				chat_id: opts.chatId,
 				action: opts.action,
 			};
@@ -374,7 +402,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async answerCallbackQuery(opts) {
-			const body: Record<string, unknown> = {
+			const body: TelegramCallbackBody = {
 				callback_query_id: opts.callbackQueryId,
 			};
 
@@ -384,7 +412,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async sendDocument(opts) {
-			const fields: Record<string, string> = {
+			const fields: TelegramFileFields = {
 				chat_id: opts.chatId.toString(),
 			};
 
@@ -400,7 +428,7 @@ export function createHttpTransport(opts: {
 		},
 
 		async sendPhoto(opts) {
-			const fields: Record<string, string> = {
+			const fields: TelegramFileFields = {
 				chat_id: opts.chatId.toString(),
 			};
 

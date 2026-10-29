@@ -207,6 +207,17 @@ describe("TelegramTransport", () => {
 		fake.expectLastBody({ chat_id: 333, text: "plain" });
 	});
 
+	test("sendMessage preserves reply markup", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: 111 } });
+		const replyMarkup = { inline_keyboard: [[{ text: "Yes", callback_data: "yes" }]] };
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await transport.sendMessage({ chatId: 333, text: "Choose", replyMarkup });
+
+		fake.expectLastBody({ chat_id: 333, text: "Choose", reply_markup: replyMarkup });
+	});
+
 	test("editMessageText maps messageId to message_id", async () => {
 		const fake = new FakeFetch();
 		fake.queueResponse({ ok: true, result: true });
@@ -346,6 +357,8 @@ describe("TelegramTransport", () => {
 
 			// Check that body is FormData (can't easily inspect contents in test)
 			expect(call.init?.body).toBeInstanceOf(FormData);
+			const form = call.init?.body;
+			expect(form instanceof FormData && form.get("caption")).toBe("Test file");
 		} finally {
 			await rm(tempDir, { recursive: true, force: true });
 		}
@@ -374,6 +387,8 @@ describe("TelegramTransport", () => {
 			const call = fake.lastCall();
 			expect(call.url).toBe(`https://api.telegram.org/bot${TOKEN}/sendPhoto`);
 			expect(call.init?.body).toBeInstanceOf(FormData);
+			const form = call.init?.body;
+			expect(form instanceof FormData && form.has("caption")).toBe(false);
 		} finally {
 			await rm(tempDir, { recursive: true, force: true });
 		}
