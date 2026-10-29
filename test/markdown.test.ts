@@ -17,6 +17,10 @@ describe("markdownToTelegramHtml — lists", () => {
 		expect(html).toBe("3. third\n4. fourth");
 	});
 
+	test("normalizes a zero ordered-list start to one", () => {
+		expect(markdownToTelegramHtml("0. first\n1. second")).toBe("1. first\n2. second");
+	});
+
 	// Regression: a list item holding a nested list used to crash the whole
 	// converter with "Token with 'list' type was not found", taking the entire
 	// reply down with it (finalize() calls the converter outside try/catch).
@@ -75,6 +79,10 @@ describe("markdownToTelegramHtml — lists", () => {
 	test("preserves inline emphasis inside a quoted list item", () => {
 		const html = markdownToTelegramHtml("- item\n  > **bold** quote");
 		expect(html).toBe("• item\n<b>bold</b> quote");
+	});
+
+	test("escapes code text inside a quoted list item", () => {
+		expect(markdownToTelegramHtml("- item\n  > ```\n  > <tag>\n  > ```")).toBe("• item\n&lt;tag&gt;");
 	});
 
 	test("renders a nested blockquote inside a list item", () => {

@@ -1,6 +1,11 @@
 // Telegram HTML formatting support for AI assistant replies
 
-import { marked } from "marked";
+import { marked, type Parser, type RendererObject, type Tokens } from "marked";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+
+const TextTokenSchema = Type.Object({ text: Type.String() });
+const ListStartSchema = Type.Number({ exclusiveMinimum: 0 });
 
 export function escapeTelegramHtml(text: string): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -83,16 +88,16 @@ function padCell(cell: string, target: number): string {
 // those ("Token with 'paragraph' type was not found"). Recurse through the
 // wrappers and parseInline only the inline leaves. Multi-line results are
 // re-indented under the list marker by renderList's continuation regex.
-function renderQuoteContent(token: any, parser: any): string {
+function renderQuoteContent(token: Tokens.Blockquote | Tokens.Generic, parser: Parser): string {
 	return (token.tokens ?? [])
-		.map((t: any) => {
+		.map((t) => {
 			if (t.type === "blockquote") return renderQuoteContent(t, parser);
 
 			if (t.type === "space") return "";
 
-			if (t.tokens) return parser.parseInline(t.tokens);
+			if ("tokens" in t && t.tokens) return parser.parseInline(t.tokens);
 
-			return typeof t.text === "string" ? escapeTelegramHtml(t.text) : "";
+			return Value.Check(TextTokenSchema, t) ? escapeTelegramHtml(t.text) : "";
 		})
 		.filter((s: string) => s.length > 0)
 		.join("\n");
@@ -105,10 +110,10 @@ function renderQuoteContent(token: any, parser: any): string {
 // inline children are parsed inline, nested lists recurse one indent deeper,
 // and the renderer fully owns the recursion (marked never re-enters for the
 // nested lists because we never hand them back to the parser).
-function renderList(token: any, parser: any, depth: number): string {
+function renderList(token: Tokens.List | Tokens.Generic, parser: Parser, depth: number): string {
 	const indent = "  ".repeat(depth);
 	const lines: string[] = [];
-	let ordinal = typeof token.start === "number" && token.start > 0 ? token.start : 1;
+	let ordinal = Value.Check(ListStartSchema, token.start) ? token.start : 1;
 
 	for (const item of token.items) {
 		let marker: string;
@@ -134,7 +139,7 @@ function renderList(token: any, parser: any, depth: number): string {
 				// blank line between loose-list paragraphs — skip
 			} else if (child.tokens) {
 				inlineParts.push(parser.parseInline(child.tokens));
-			} else if (typeof child.text === "string") {
+			} else if (Value.Check(TextTokenSchema, child)) {
 				inlineParts.push(escapeTelegramHtml(child.text));
 			}
 		}
@@ -209,35 +214,35 @@ function sanitizeRawHtml(markdown: string): string {
 export function markdownToTelegramHtml(markdown: string): string {
 	const sanitized = sanitizeRawHtml(markdown);
 
-	const renderer = {
-		text(this: any, token: { text: string; tokens?: any[] }): string {
+	const renderer: RendererObject = {
+		text(token): string {
 			// Block-level text tokens carry inline children (bold, code, etc.).
 			// Parse them so emphasis inside lists and cells is preserved.
-			return token.tokens ? this.parser.parseInline(token.tokens) : escapeTelegramHtml(token.text);
+			return "tokens" in token && token.tokens ? this.parser.parseInline(token.tokens) : escapeTelegramHtml(token.text);
 		},
-		html(token: { text: string }): string {
+		html(token): string {
 			return escapeTelegramHtml(token.text);
 		},
-		strong(this: any, token: { tokens: any[] }): string {
+		strong(token): string {
 			const content = this.parser.parseInline(token.tokens);
 
 			return `<b>${content}</b>`;
 		},
-		em(this: any, token: { tokens: any[] }): string {
+		em(token): string {
 			const content = this.parser.parseInline(token.tokens);
 
 			return `<i>${content}</i>`;
 		},
-		link(this: any, token: { href: string; tokens: any[] }): string {
+		link(token): string {
 			const content = this.parser.parseInline(token.tokens);
 
 			return `<a href="${token.href}">${content}</a>`;
 		},
-		paragraph(this: any, token: { tokens: any[] }): string {
+		paragraph(token): string {
 			// Telegram HTML does not support <p>; emit inline content with paragraph spacing
 			return this.parser.parseInline(token.tokens) + '\n\n';
 		},
-		heading(this: any, token: { tokens: any[] }): string {
+		heading(token): string {
 			const content = stripBold(this.parser.parseInline(token.tokens));
 
 			return `<b>${content}</b>\n\n`;
@@ -251,7 +256,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 		br(): string {
 			return "\n";
 		},
-		list(this: any, token: { ordered: boolean; items: any[] }): string {
+		list(token): string {
 			return renderList(token, this.parser, 0) + '\n\n';
 		},
 		// Telegram has no <table> primitive. Render tables as a fixed-width
@@ -260,12 +265,12 @@ export function markdownToTelegramHtml(markdown: string): string {
 		// reduced to plain text (no inline tags inside <pre>) and padded to the
 		// widest cell per column using display width (so emoji/CJK align too).
 		// A box-drawing divider under the header gives it the table look.
-		table(this: any, token: { header: any[]; rows: any[][] }): string {
-			const toText = (cell: any): string =>
+		table(token): string {
+			const toText = (cell: Tokens.TableCell): string =>
 				stripTags(this.parser.parseInline(cell.tokens)).replace(/\s+/g, " ").trim();
 
 			const header = token.header.map(toText);
-			const rows = token.rows.map((row: any[]) => row.map(toText));
+			const rows = token.rows.map((row) => row.map(toText));
 			const columnCount = header.length;
 
 			// Widest display-width cell per column drives the padding target.
