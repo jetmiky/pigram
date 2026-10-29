@@ -55,11 +55,13 @@ export function sumAssistantUsage(
 ): TokenUsage {
 	let input = 0;
 	let output = 0;
+
 	for (const entry of entries) {
 		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
 		input += entry.message.usage?.input ?? 0;
 		output += entry.message.usage?.output ?? 0;
 	}
+
 	return { input, output };
 }
 
@@ -99,6 +101,7 @@ export function createAgentSession(driver: PiSessionDriver): AgentSessionPort {
 	return {
 		getStatus(): SessionStatus {
 			const model = driver.session.model;
+
 			return {
 				...(model?.id ? { modelId: model.id } : {}),
 				...(model?.provider ? { provider: model.provider } : {}),

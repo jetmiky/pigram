@@ -29,11 +29,13 @@ export interface AgentMessageLike {
  */
 export function getAgentMessageText(message: AgentMessageLike): string {
 	const content = Array.isArray(message.content) ? message.content : [];
+
 	const joined = content
 		.filter((block): block is ContentBlock => typeof block === "object" && block !== null && "type" in block)
 		.filter((block) => block.type === "text" && typeof block.text === "string")
 		.map((block) => block.text as string)
 		.join("");
+
 	return stripReasoningTags(joined);
 }
 
@@ -58,6 +60,7 @@ export function stripReasoningTags(text: string): string {
 	let out = text.replace(/<(thinking|think)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
 	// Remove a dangling opening tag with no close (e.g. truncated reasoning).
 	out = out.replace(/<(thinking|think)\b[^>]*>[\s\S]*$/gi, "");
+
 	// Collapse the blank lines the removal tends to leave behind, and trim.
 	return out.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -80,14 +83,20 @@ export interface AssistantOutcome {
 export function extractAssistantText(messages: readonly AgentMessageLike[]): AssistantOutcome {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
+
 		if (message?.role !== "assistant") continue;
 		const outcome: AssistantOutcome = {};
 		const text = getAgentMessageText(message);
+
 		if (text) outcome.text = text;
+
 		if (typeof message.stopReason === "string") outcome.stopReason = message.stopReason;
+
 		if (typeof message.errorMessage === "string") outcome.errorMessage = message.errorMessage;
+
 		return outcome;
 	}
+
 	return {};
 }
 
@@ -118,11 +127,14 @@ export function resolveReplyToStore(
 	if (outcome.stopReason === "aborted") {
 		return { shouldDeliver: false };
 	}
+
 	if (outcome.stopReason === "error") {
 		return { shouldDeliver: hasActiveTurn, ...(outcome.errorMessage ? { errorMessage: outcome.errorMessage } : {}) };
 	}
+
 	if (outcome.text) {
 		return { text: outcome.text, shouldDeliver: hasActiveTurn };
 	}
+
 	return { shouldDeliver: false };
 }

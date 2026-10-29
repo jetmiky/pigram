@@ -12,6 +12,7 @@ function makeFakePi() {
 	const registeredTools: Array<Record<string, unknown>> = [];
 	const registeredCommands: Array<{ name: string; def: Record<string, unknown> }> = [];
 	const events = new Map<string, Array<(...args: never[]) => unknown>>();
+
 	const pi = {
 		registerTool(tool: Record<string, unknown>): void {
 			registeredTools.push(tool);
@@ -25,6 +26,7 @@ function makeFakePi() {
 			events.set(event, list);
 		},
 	} as unknown as ExtensionAPI;
+
 	return { pi, registeredTools, registeredCommands, events };
 }
 

@@ -35,10 +35,13 @@ export function resolveNotifyRequest(
 	pairedChatId: number | undefined,
 ): PendingNotify | undefined {
 	if (override === "off") return undefined;
+
 	if (override) return override;
+
 	if (configured === "all" && pairedChatId !== undefined) {
 		return { mode: "sticky", chatId: pairedChatId };
 	}
+
 	return undefined;
 }
 
@@ -55,9 +58,13 @@ export const NOTIFY_USAGE_MESSAGE = "usage: /pigram-notify [on|off] — no arg a
  */
 export function parseNotifyArgs(raw: string): ParsedNotifyArgs {
 	const arg = raw.trim().toLowerCase();
+
 	if (arg === "") return { ok: true, mode: "once" };
+
 	if (arg === "on") return { ok: true, mode: "sticky" };
+
 	if (arg === "off") return { ok: true, mode: "off" };
+
 	return { ok: false, message: NOTIFY_USAGE_MESSAGE };
 }
 
@@ -95,6 +102,7 @@ export function consumePendingNotify(
 	if (!pending) return {};
 
 	let deliver: NotifyDelivery | undefined;
+
 	if (outcome.text) {
 		deliver = { kind: "text", chatId: pending.chatId, markdown: outcome.text };
 	} else if (outcome.errorMessage) {
@@ -105,5 +113,6 @@ export function consumePendingNotify(
 		// Aborted turn / empty reply: stay armed for the next completed turn.
 		return { pending };
 	}
+
 	return pending.mode === "once" ? { deliver } : { deliver, pending };
 }

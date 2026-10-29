@@ -22,6 +22,7 @@ describe("mapInboundMessage", () => {
       text: "check this out",
       imagePaths: ["/tmp/img1.jpg", "/tmp/img2.png"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] check this out");
@@ -33,6 +34,7 @@ describe("mapInboundMessage", () => {
     const msg: InboundMessage = {
       documentPaths: ["/tmp/doc1.pdf", "/tmp/doc2.txt"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] (sent 2 file(s))");
@@ -44,6 +46,7 @@ describe("mapInboundMessage", () => {
     const msg: InboundMessage = {
       documentPaths: ["/tmp/single.pdf"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] (sent 1 file(s))");
@@ -54,6 +57,7 @@ describe("mapInboundMessage", () => {
     const msg: InboundMessage = {
       imagePaths: ["/tmp/img1.jpg", "/tmp/img2.png", "/tmp/img3.gif"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] (sent 3 file(s))");
@@ -70,6 +74,7 @@ describe("mapInboundMessage", () => {
       imagePaths: ["/tmp/img1.jpg"],
       documentPaths: ["/tmp/doc1.pdf", "/tmp/doc2.txt"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] (sent 3 file(s))");
@@ -92,6 +97,7 @@ describe("mapInboundMessage", () => {
       imagePaths: ["/tmp/screenshot.png"],
       documentPaths: ["/tmp/report.pdf"],
     };
+
     const mapped = mapInboundMessage(msg);
 
     expect(mapped.text).toBe("[telegram] review these");

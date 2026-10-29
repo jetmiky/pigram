@@ -22,6 +22,7 @@ export const telegramAskParameters = Type.Union([
 ]);
 
 export type TelegramAskToolParams = Static<typeof telegramAskParameters>;
+
 export type TelegramAskOutcome =
 	| { status: "answered"; value: string | boolean }
 	| { status: "cancelled" }
@@ -29,8 +30,11 @@ export type TelegramAskOutcome =
 	| { status: "unavailable"; reason: "not_telegram_turn" | "dialog_pending" };
 
 type Transport = Pick<TelegramTransport, "sendMessage" | "editMessageText" | "answerCallbackQuery">;
+
 type TurnOwner = { chatId: number; userId: number };
+
 type ResponseOrigin = { chatId: number; userId: number };
+
 type Pending = {
 	id: string;
 	owner: TurnOwner;
@@ -77,15 +81,19 @@ export class TelegramAskController {
 
 	cancel(): void {
 		const pending = this.pending;
+
 		if (!pending) return;
 		this.finish(pending, { status: "cancelled" }, "❌ Cancelled");
 	}
 
 	handleText(text: string, origin: ResponseOrigin): boolean {
 		const pending = this.pending;
+
 		if (!pending || pending.params.kind !== "text") return false;
+
 		if (!this.authorized(pending, origin)) return false;
 		this.finish(pending, { status: "answered", value: text }, "✓ Answer received");
+
 		return true;
 	}
 
@@ -96,32 +104,44 @@ export class TelegramAskController {
 
 	async handleCallbackQuery(query: TelegramCallbackQuery): Promise<boolean> {
 		const data = query.data;
+
 		if (!data) return false;
 		const [id, indexText, extra] = data.split(":");
+
 		if (!id || indexText === undefined || extra !== undefined || !/^\d+$/.test(indexText)) return false;
 
 		const pending = this.pending;
+
 		if (!pending || pending.id !== id) {
 			await this.answer(query.id, "Dialog expired");
+
 			return true;
 		}
+
 		if (!this.authorized(pending, {
 			chatId: query.message?.chat.id ?? Number.NaN,
 			userId: query.from.id,
 		})) {
 			await this.answer(query.id, "Not authorized");
+
 			return true;
 		}
+
 		if (pending.params.kind === "text") {
 			await this.answer(query.id, "This dialog expects text");
+
 			return true;
 		}
+
 		const options = pending.params.kind === "confirm"
 			? [{ label: "Yes", value: true }, { label: "No", value: false }]
 			: pending.params.options;
+
 		const chosen = options[Number(indexText)];
+
 		if (!chosen) {
 			await this.answer(query.id, "Dialog expired");
+
 			return true;
 		}
 
@@ -129,22 +149,27 @@ export class TelegramAskController {
 		await this.answer(query.id);
 		const outcome: TelegramAskOutcome = { status: "answered", value: chosen.value };
 		this.finish(pending, outcome, `✓ ${chosen.label}`);
+
 		return true;
 	}
 
 	ask(params: TelegramAskToolParams, signal?: AbortSignal): Promise<TelegramAskOutcome> {
 		this.validate(params);
+
 		if (!this.turn) return Promise.resolve({ status: "unavailable", reason: "not_telegram_turn" });
+
 		if (this.pending) return Promise.resolve({ status: "unavailable", reason: "dialog_pending" });
 
 		const id = this.idGen();
 		const owner = this.turn;
 		const text = params.question;
+
 		const replyMarkup = params.kind === "select"
 			? { inline_keyboard: params.options.map((option, index) => [{ text: option.label, callback_data: `${id}:${index}` }]) }
 			: params.kind === "confirm"
 				? { inline_keyboard: [[{ text: "Yes", callback_data: `${id}:0` }], [{ text: "No", callback_data: `${id}:1` }]] }
 				: undefined;
+
 		const messageId = this.transport.sendMessage({
 			chatId: owner.chatId,
 			text,
@@ -156,16 +181,21 @@ export class TelegramAskController {
 			this.pending = pending;
 			const timeoutMs = this.timeoutMsOverride ?? (params.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
 			pending.timer = setTimeout(() => this.finish(pending, { status: "timeout" }, "⌛ Timed out"), timeoutMs);
+
 			if (signal) {
 				pending.signal = signal;
 				const onAbort = () => this.finish(pending, { status: "cancelled" }, "❌ Cancelled");
 				pending.onAbort = onAbort;
+
 				if (signal.aborted) onAbort();
 				else signal.addEventListener("abort", onAbort, { once: true });
 			}
+
 			messageId.catch((error) => {
 				if (this.pending === pending) this.pending = undefined;
+
 				if (pending.timer) clearTimeout(pending.timer);
+
 				if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
 				pending.onAbort = undefined;
 				reject(error);
@@ -175,9 +205,11 @@ export class TelegramAskController {
 
 	private validate(params: TelegramAskToolParams): void {
 		if (params.kind === "select" && params.options.length === 0) throw new Error("select requires at least one option");
+
 		if (params.kind !== "select" && "options" in params && params.options !== undefined) {
 			throw new Error(`${params.kind} does not accept options`);
 		}
+
 		if (params.timeoutSeconds !== undefined &&
 			(!Number.isFinite(params.timeoutSeconds) || params.timeoutSeconds < MIN_TIMEOUT_SECONDS || params.timeoutSeconds > MAX_TIMEOUT_SECONDS)) {
 			throw new Error("timeoutSeconds must be between 15 and 900");
@@ -195,8 +227,11 @@ export class TelegramAskController {
 	private finish(pending: Pending, outcome: TelegramAskOutcome, suffix: string): void {
 		if (pending.settled) return;
 		pending.settled = true;
+
 		if (this.pending === pending) this.pending = undefined;
+
 		if (pending.timer) clearTimeout(pending.timer);
+
 		if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
 		pending.onAbort = undefined;
 		void pending.messageId.then((messageId) => this.transport.editMessageText({
@@ -217,6 +252,7 @@ export function createTelegramAskTool(
 		getController: (() => TelegramAskController | undefined) | TelegramAskController,
 ): ToolDefinition<typeof telegramAskParameters, TelegramAskOutcome> {
 	const resolveController = typeof getController === "function" ? getController : () => getController;
+
 	return {
 		name: "telegram_ask",
 		label: "Telegram Ask",
@@ -227,7 +263,9 @@ export function createTelegramAskTool(
 		executionMode: "sequential",
 		async execute(_toolCallId, params, signal) {
 			const controller = resolveController();
+
 			if (!controller) return result({ status: "unavailable", reason: "not_telegram_turn" });
+
 			return result(await controller.ask(params, signal));
 		},
 	};

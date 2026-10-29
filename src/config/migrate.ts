@@ -23,6 +23,7 @@ interface LegacyConfig {
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
+
     return true;
   } catch {
     return false;
@@ -78,6 +79,7 @@ export async function migrateLegacyConfig(opts: {
 
   // Read and parse legacy file
   let legacyContent: string;
+
   try {
     legacyContent = await readFile(legacyPath, "utf8");
   } catch (err) {
@@ -88,6 +90,7 @@ export async function migrateLegacyConfig(opts: {
   }
 
   let legacy: LegacyConfig;
+
   try {
     legacy = JSON.parse(legacyContent) as LegacyConfig;
   } catch (err) {
@@ -123,9 +126,11 @@ export async function migrateLegacyConfig(opts: {
   if (legacy.allowedUserId !== undefined) {
     newState.pairedUserId = legacy.allowedUserId;
   }
+
   if (legacy.botId !== undefined) {
     newState.botId = legacy.botId;
   }
+
   if (legacy.botUsername !== undefined) {
     newState.botUsername = legacy.botUsername;
   }

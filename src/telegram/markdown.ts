@@ -56,19 +56,25 @@ function isWideCodePoint(cp: number): boolean {
 // and combining marks contribute 0; wide glyphs contribute 2; everything else 1.
 export function displayWidth(text: string): number {
 	let width = 0;
+
 	for (const ch of text) {
 		const cp = ch.codePointAt(0)!;
+
 		if (cp === 0x200d) continue; // zero-width joiner
+
 		if (cp >= 0xfe00 && cp <= 0xfe0f) continue; // variation selectors
+
 		if (cp >= 0x0300 && cp <= 0x036f) continue; // combining diacriticals
 		width += isWideCodePoint(cp) ? 2 : 1;
 	}
+
 	return width;
 }
 
 // Right-pad a cell with spaces to a target monospace width.
 function padCell(cell: string, target: number): string {
 	const pad = target - displayWidth(decodeTelegramHtml(cell));
+
 	return pad > 0 ? cell + " ".repeat(pad) : cell;
 }
 
@@ -81,8 +87,11 @@ function renderQuoteContent(token: any, parser: any): string {
 	return (token.tokens ?? [])
 		.map((t: any) => {
 			if (t.type === "blockquote") return renderQuoteContent(t, parser);
+
 			if (t.type === "space") return "";
+
 			if (t.tokens) return parser.parseInline(t.tokens);
+
 			return typeof t.text === "string" ? escapeTelegramHtml(t.text) : "";
 		})
 		.filter((s: string) => s.length > 0)
@@ -103,6 +112,7 @@ function renderList(token: any, parser: any, depth: number): string {
 
 	for (const item of token.items) {
 		let marker: string;
+
 		if (item.task) {
 			marker = item.checked ? "☑ " : "☐ ";
 		} else if (token.ordered) {
@@ -113,6 +123,7 @@ function renderList(token: any, parser: any, depth: number): string {
 
 		const inlineParts: string[] = [];
 		const nestedBlocks: string[] = [];
+
 		for (const child of item.tokens ?? []) {
 			if (child.type === "list") {
 				nestedBlocks.push(renderList(child, parser, depth + 1));
@@ -133,6 +144,7 @@ function renderList(token: any, parser: any, depth: number): string {
 		const continuation = `\n${indent}${" ".repeat(marker.length)}`;
 		const head = inlineParts.join(continuation).replace(/\s*\n\s*/g, continuation);
 		lines.push(`${indent}${marker}${head}`);
+
 		for (const block of nestedBlocks) lines.push(block);
 	}
 
@@ -157,8 +169,10 @@ function renderList(token: any, parser: any, depth: number): string {
  */
 function sanitizeRawHtml(markdown: string): string {
 	const stashed: string[] = [];
+
 	const stash = (s: string) => {
 		stashed.push(s);
+
 		return `\u0000${stashed.length - 1}\u0000`;
 	};
 
@@ -194,6 +208,7 @@ function sanitizeRawHtml(markdown: string): string {
 
 export function markdownToTelegramHtml(markdown: string): string {
 	const sanitized = sanitizeRawHtml(markdown);
+
 	const renderer = {
 		text(this: any, token: { text: string; tokens?: any[] }): string {
 			// Block-level text tokens carry inline children (bold, code, etc.).
@@ -205,14 +220,17 @@ export function markdownToTelegramHtml(markdown: string): string {
 		},
 		strong(this: any, token: { tokens: any[] }): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<b>${content}</b>`;
 		},
 		em(this: any, token: { tokens: any[] }): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<i>${content}</i>`;
 		},
 		link(this: any, token: { href: string; tokens: any[] }): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<a href="${token.href}">${content}</a>`;
 		},
 		paragraph(this: any, token: { tokens: any[] }): string {
@@ -221,6 +239,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 		},
 		heading(this: any, token: { tokens: any[] }): string {
 			const content = stripBold(this.parser.parseInline(token.tokens));
+
 			return `<b>${content}</b>\n\n`;
 		},
 		// Telegram HTML has no <hr>; emitting one makes Telegram reject the whole
@@ -252,10 +271,12 @@ export function markdownToTelegramHtml(markdown: string): string {
 			// Widest display-width cell per column drives the padding target.
 			const widths: number[] = header.map((cell, col) => {
 				let max = displayWidth(decodeTelegramHtml(cell));
+
 				for (const row of rows) {
 					const value = row[col] ?? "";
 					max = Math.max(max, displayWidth(decodeTelegramHtml(value)));
 				}
+
 				return max;
 			});
 
@@ -267,6 +288,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 			const divider = widths.map((w) => "─".repeat(Math.max(1, w))).join("──");
 
 			const lines = [renderRow(header), divider, ...rows.map((row) => renderRow(row))];
+
 			// The whole grid is escaped plain text wrapped in <pre>.
 			return `<pre>${lines.join("\n")}</pre>\n\n`;
 		},
@@ -301,6 +323,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 		for (let j = tagStack.length - 1; j >= 0; j--) {
 			currentChunk += `</${tagStack[j]!.name}>`;
 		}
+
 		chunks.push(currentChunk);
 		currentChunk = tagStack.map(t => t.fullTag).join('');
 	};
@@ -309,6 +332,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 		if (html[i]! === '<') {
 			// Find end of tag
 			const tagEnd = html.indexOf('>', i);
+
 			if (tagEnd === -1) break; // Malformed HTML
 
 			const tag = html.slice(i, tagEnd + 1);
@@ -318,6 +342,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 			// Opening tags ADD to the stack (future closing cost goes up);
 			// closing tags REMOVE from the stack (cost goes down).
 			let closingDelta = 0;
+
 			if (tag.startsWith('</')) {
 				const name = tag.slice(2, -1).trim();
 				closingDelta = -(name.length + 3); // </name>
@@ -338,6 +363,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 			// Update tagStack
 			if (tag.startsWith('</')) {
 				const tagName = tag.slice(2, -1).trim();
+
 				for (let j = tagStack.length - 1; j >= 0; j--) {
 					if (tagStack[j]!.name === tagName) {
 						tagStack.splice(j, 1);
@@ -388,14 +414,17 @@ export function chunkPlainText(text: string, maxLength = 4096): string[] {
 	while (remaining.length > maxLength) {
 		// Try to split at the last paragraph break within maxLength
 		let splitAt = remaining.lastIndexOf('\n\n', maxLength);
+
 		if (splitAt <= 0) {
 			// No paragraph break — try single newline
 			splitAt = remaining.lastIndexOf('\n', maxLength);
 		}
+
 		if (splitAt <= 0) {
 			// No newline at all — hard split at maxLength
 			splitAt = maxLength;
 		}
+
 		chunks.push(remaining.slice(0, splitAt));
 		remaining = remaining.slice(splitAt).replace(/^\n+/, '');
 	}

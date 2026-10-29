@@ -58,6 +58,7 @@ describe("Lock", () => {
         startedAt: new Date(Date.now() - 60_000).toISOString(),
         heartbeat: new Date(Date.now() - 60_000).toISOString(),
       };
+
       await writeFile(lockPath, JSON.stringify(staleLock));
 
       const result = await tryAcquireLock(lockPath, "tokenhash123");
@@ -70,6 +71,7 @@ describe("Lock", () => {
     test("refuses when another live process holds the same bot", async () => {
       // Write a helper script that acquires the lock and signals readiness.
       const signalFile = join(tempDir, "ready.signal");
+
       const helperScript = `
         import { tryAcquireLock } from ${JSON.stringify(join(process.cwd(), "src/config/lock.js"))};
         const result = await tryAcquireLock(${JSON.stringify(lockPath)}, "tokenhash123");
@@ -84,6 +86,7 @@ describe("Lock", () => {
           process.exit(1);
         }
       `;
+
       const scriptFile = join(tempDir, "helper.ts");
       await writeFile(scriptFile, helperScript);
 
@@ -99,6 +102,7 @@ describe("Lock", () => {
       // Now try to acquire from this process — should be refused
       const result = await tryAcquireLock(lockPath, "tokenhash123");
       expect(result.acquired).toBe(false);
+
       if (!result.acquired) {
         expect(result.holderPid).toBe(childPid);
         expect(result.holderSince).toBeDefined();
@@ -116,6 +120,7 @@ describe("Lock", () => {
         startedAt: new Date(Date.now() - 10_000).toISOString(),
         heartbeat: new Date().toISOString(),
       };
+
       await writeFile(lockPath, JSON.stringify(otherLock));
 
       const result = await tryAcquireLock(lockPath, "my-token-hash");
@@ -130,6 +135,7 @@ describe("Lock", () => {
       // We test this directly rather than through child processes, since
       // Bun spawns so fast that sequential child processes don't actually race.
       const now = new Date().toISOString();
+
       const payload = JSON.stringify({
         pid: process.pid,
         tokenHash: "tokenhash123",
@@ -168,11 +174,13 @@ describe("Lock", () => {
       await releaseLock(lockPath);
 
       let exists = true;
+
       try {
         await access(lockPath);
       } catch {
         exists = false;
       }
+
       expect(exists).toBe(false);
     });
 
@@ -185,6 +193,7 @@ describe("Lock", () => {
 /** Wait for a file to appear, then return its content. Rejects after timeout. */
 async function waitForFile(path: string, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs;
+
   while (Date.now() < deadline) {
     try {
       return await readFile(path, "utf8");
@@ -192,5 +201,6 @@ async function waitForFile(path: string, timeoutMs: number): Promise<string> {
       await new Promise((r) => setTimeout(r, 50));
     }
   }
+
   throw new Error(`Timed out waiting for ${path}`);
 }

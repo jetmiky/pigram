@@ -24,6 +24,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "9router",
 			specifier: "kr/claude-sonnet-4.5",
 		});
+
 		expect(result).toEqual({ ok: true, model: { provider: "9router", id: "kr/claude-sonnet-4.5" } });
 	});
 
@@ -33,6 +34,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "openai", // even with a different current provider
 			specifier: "9router/kr/claude-sonnet-4.5",
 		});
+
 		expect(result).toEqual({ ok: true, model: { provider: "9router", id: "kr/claude-sonnet-4.5" } });
 	});
 
@@ -42,6 +44,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "openai",
 			specifier: "9ROUTER/kr/claude-opus-4.8",
 		});
+
 		expect(result).toEqual({ ok: true, model: { provider: "9router", id: "kr/claude-opus-4.8" } });
 	});
 
@@ -51,6 +54,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "openai",
 			specifier: "gpt-5",
 		});
+
 		expect(result).toEqual({ ok: true, model: { provider: "openai", id: "gpt-5" } });
 	});
 
@@ -60,6 +64,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "9router",
 			specifier: "kr/nonexistent",
 		});
+
 		expect(result).toEqual({ ok: false, message: "model not found: kr/nonexistent" });
 	});
 
@@ -69,6 +74,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "openai",
 			specifier: "9router/kr/ghost",
 		});
+
 		expect(result).toEqual({
 			ok: false,
 			message: "model not found: 9router/kr/ghost (provider: 9router)",
@@ -81,6 +87,7 @@ describe("resolveModelTarget", () => {
 			currentProvider: "openai",
 			specifier: "gpt-99",
 		});
+
 		expect(result).toEqual({ ok: false, message: "model not found: gpt-99" });
 	});
 });

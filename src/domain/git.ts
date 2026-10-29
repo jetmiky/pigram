@@ -55,11 +55,14 @@ export function getGitExecSpec(command: Extract<GitCommand, { ok: true }>): GitE
 	if (command.kind === "status") {
 		return { title: "git status", steps: [{ args: ["status", "--short", "--branch"] }] };
 	}
+
 	if (command.kind === "log") {
 		return { title: "git log", steps: [{ args: ["log", "--oneline", "--decorate", "-20"] }] };
 	}
+
 	// nb: parseGitCommand guarantees a branchName when ok, but guard anyway.
 	const branchName = command.branchName ?? "";
+
 	return {
 		title: `git nb ${branchName}`,
 		steps: [
@@ -77,9 +80,11 @@ export function formatGitReply(input: { title: string; stdout: string; stderr: s
 	const output = input.stdout || input.stderr;
 	const body = output.length > 0 ? output : "(no output)";
 	const reply = `${input.title}\n\n${body}`;
+
 	if (reply.length > MAX_MESSAGE_LENGTH) {
 		return reply.slice(0, MAX_MESSAGE_LENGTH - TRUNCATION_NOTE.length) + TRUNCATION_NOTE;
 	}
+
 	return reply;
 }
 
@@ -91,13 +96,17 @@ export function formatGitReply(input: { title: string; stdout: string; stderr: s
  */
 export async function runGitSpec(spec: GitExecSpec, runner: GitRunner, cwd: string): Promise<string> {
 	let result: GitRunResult | undefined;
+
 	for (const step of spec.steps) {
 		result = await runner(step.args, cwd);
+
 		if (result.exitCode !== 0) {
 			const title = step.failureTitle ?? `${spec.title} failed`;
+
 			return formatGitReply({ title, stdout: result.stdout, stderr: result.stderr });
 		}
 	}
+
 	// spec.steps is never empty, so result is always defined here.
 	return formatGitReply({ title: spec.title, stdout: result!.stdout, stderr: result!.stderr });
 }

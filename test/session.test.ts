@@ -29,6 +29,7 @@ function createFakeDriver(state: FakeSessionState): PiSessionDriver {
 			},
 			compact: async () => {
 				state.calls.push({ method: "session.compact", args: [] });
+
 				return { success: true };
 			},
 			abort: async () => {
@@ -49,6 +50,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -67,6 +69,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "off",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -85,6 +88,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		// Simulate isProcessing being undefined
 		Object.defineProperty(driver.session, "isProcessing", {
@@ -103,6 +107,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "minimal",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -119,6 +124,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -136,6 +142,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "minimal",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -152,6 +159,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -168,6 +176,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -184,6 +193,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -200,6 +210,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -224,6 +235,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "message", message: { role: "assistant", usage: { input: 100, output: 10 } } },
 			{ type: "message", message: { role: "assistant", usage: { input: 250, output: 25 } } },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 350, output: 35 });
 	});
 
@@ -234,6 +246,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "model_change", provider: "anthropic", modelId: "claude" },
 			{ type: "session_info", name: "my-session" },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 100, output: 10 });
 	});
 
@@ -242,6 +255,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "message", message: { role: "assistant" } },
 			{ type: "message", message: { role: "assistant", usage: { input: 5 } } },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 5, output: 0 });
 	});
 });

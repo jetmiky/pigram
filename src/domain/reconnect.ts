@@ -57,31 +57,43 @@ export interface InspectableEntry {
  */
 export function findPendingReconnectRequest(entries: readonly InspectableEntry[]): ReconnectRequest | undefined {
 	const consumed = new Set<string>();
+
 	for (const entry of entries) {
 		if (entry.type !== "custom" || entry.customType !== RECONNECT_CONSUMED_ENTRY_TYPE) continue;
 		const data = entry.data;
+
 		if (!data || typeof data !== "object") continue;
 		const requestId = (data as ReconnectConsumed).requestId;
+
 		if (typeof requestId === "string" && requestId.length > 0) consumed.add(requestId);
 	}
 
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
+
 		if (!entry || entry.type !== "custom" || entry.customType !== RECONNECT_REQUEST_ENTRY_TYPE) continue;
 		const data = entry.data;
+
 		if (!data || typeof data !== "object") continue;
 		const request = data as ReconnectRequest;
+
 		if (typeof request.requestId !== "string" || request.requestId.length === 0) continue;
+
 		if (typeof request.chatId !== "number") continue;
+
 		if (consumed.has(request.requestId)) continue;
+
 		return request;
 	}
+
 	return undefined;
 }
 
 /** Format the Telegram confirmation shown after a successful /new. */
 export function formatNewSessionConfirmation(request: Pick<ReconnectRequest, "sessionName" | "truncated">): string {
 	if (!request.sessionName) return "🆕 Started a fresh pi session";
+
 	if (!request.truncated) return `🆕 Started a fresh pi session: ${request.sessionName}`;
+
 	return `🆕 Started a fresh pi session: ${request.sessionName} (name truncated)`;
 }

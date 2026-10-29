@@ -91,6 +91,7 @@ export class TelegramPoller {
 		while (!signal.aborted) {
 			try {
 				const offset = this.getCursor() + 1;
+
 				const updates = await this.transport.getUpdates(
 					{
 						offset,
@@ -144,6 +145,7 @@ export class TelegramPoller {
 				// longer so it can terminate, instead of racing it. Other errors
 				// use the normal short delay.
 				const delay = this.isConflictError(err) ? this.conflictDelayMs : this.errorDelayMs;
+
 				if (delay > 0) {
 					await this.sleep(delay);
 				}
@@ -159,6 +161,7 @@ export class TelegramPoller {
 	private isConflictError(err: unknown): boolean {
 		if (!(err instanceof Error)) return false;
 		const msg = err.message.toLowerCase();
+
 		return msg.includes("conflict") && msg.includes("getupdates");
 	}
 

@@ -39,21 +39,25 @@ describe("findPendingReconnectRequest", () => {
 	test("skips consumed newest and falls back to an older pending one", () => {
 		const older: ReconnectRequest = { requestId: "r1", chatId: 1 };
 		const newer: ReconnectRequest = { requestId: "r2", chatId: 2 };
+
 		const found = findPendingReconnectRequest([
 			requestEntry(older),
 			requestEntry(newer),
 			consumedEntry("r2"),
 		]);
+
 		expect(found).toEqual(older);
 	});
 
 	test("ignores non-custom and unrelated entries", () => {
 		const req: ReconnectRequest = { requestId: "r1", chatId: 42 };
+
 		const found = findPendingReconnectRequest([
 			{ type: "message" },
 			{ type: "custom", customType: "something-else", data: { requestId: "x" } },
 			requestEntry(req),
 		]);
+
 		expect(found).toEqual(req);
 	});
 

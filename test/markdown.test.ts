@@ -104,6 +104,7 @@ describe("chunkTelegramHtml", () => {
 		const html = "<b>" + "x".repeat(5000) + "</b>";
 		const chunks = chunkTelegramHtml(html);
 		expect(allUnder(chunks, 4096)).toBe(true);
+
 		// Each chunk should be valid HTML with balanced tags
 		for (const chunk of chunks) {
 			expect(chunk).toContain("<b>");

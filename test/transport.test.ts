@@ -30,9 +30,11 @@ class FakeFetch {
 
 	fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
 		this.calls.push({ url: url.toString(), init });
+
 		if (this.responseIndex >= this.responses.length) {
 			throw new Error("FakeFetch: no more queued responses");
 		}
+
 		return this.responses[this.responseIndex++];
 	};
 
@@ -42,10 +44,13 @@ class FakeFetch {
 
 	async lastBodyAsJson(): Promise<unknown> {
 		const last = this.lastCall();
+
 		if (!last?.init?.body) return null;
+
 		if (typeof last.init.body === "string") {
 			return JSON.parse(last.init.body);
 		}
+
 		return null;
 	}
 }
@@ -120,12 +125,15 @@ describe("TelegramTransport", () => {
 
 	test("getUpdates aborts a request that outlives the server long-poll timeout", async () => {
 		let requestSignal: AbortSignal | undefined;
+
 		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			requestSignal = init?.signal ?? undefined;
+
 			return new Promise((_resolve, reject) => {
 				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
 			});
 		};
+
 		const transport = createHttpTransport({
 			botToken: TOKEN,
 			fetchImpl,
@@ -138,12 +146,15 @@ describe("TelegramTransport", () => {
 
 	test("getUpdates lifecycle cancellation aborts a pending request promptly", async () => {
 		let requestSignal: AbortSignal | undefined;
+
 		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			requestSignal = init?.signal ?? undefined;
+
 			return new Promise((_resolve, reject) => {
 				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
 			});
 		};
+
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl });
 		const controller = new AbortController();
 		const pending = transport.getUpdates({ offset: 1, timeout: 30 }, controller.signal);
@@ -176,6 +187,7 @@ describe("TelegramTransport", () => {
 		});
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 		const result = await transport.sendMessage({
 			chatId: 222,
 			text: "Hello world",
@@ -232,6 +244,7 @@ describe("TelegramTransport", () => {
 		fake.queueResponse({ ok: true, result: { message_id: 777 } });
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 		const result = await transport.sendRichMessage({
 			chatId: 444,
 			markdown: "| A | B |\n|---|---|\n| 1 | 2 |",
@@ -330,6 +343,7 @@ describe("TelegramTransport", () => {
 
 		try {
 			const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 			const result = await transport.sendDocument({
 				chatId: 888,
 				filePath: testFile,
@@ -361,6 +375,7 @@ describe("TelegramTransport", () => {
 
 		try {
 			const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 			const result = await transport.sendPhoto({
 				chatId: 999,
 				filePath: testFile,

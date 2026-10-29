@@ -22,6 +22,7 @@ export interface ResolvedPaths {
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
+
     return true;
   } catch {
     return false;
@@ -32,6 +33,7 @@ function getProjectPaths(cwd: string): ResolvedPaths {
   const configPath = join(cwd, ".pi", "pigram.json");
   const tempDir = join(cwd, ".pi", "tmp", "pigram");
   const statePath = join(tempDir, "state.json");
+
   return { scope: "project", configPath, statePath, tempDir };
 }
 
@@ -39,6 +41,7 @@ function getGlobalPaths(homeDir: string): ResolvedPaths {
   const configPath = join(homeDir, ".pi", "agent", "pigram.json");
   const tempDir = join(homeDir, ".pi", "agent", "tmp", "pigram");
   const statePath = join(tempDir, "state.json");
+
   return { scope: "global", configPath, statePath, tempDir };
 }
 
@@ -52,6 +55,7 @@ export async function resolveScope(opts: {
 
   // If scope is forced, return that scope's paths
   if (opts.scope === "project") return projectPaths;
+
   if (opts.scope === "global") return globalPaths;
 
   // Check if project config exists
@@ -74,6 +78,7 @@ export async function readConfig(
   const content = await readFile(paths.configPath, "utf8");
   
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(content);
   } catch (err) {
@@ -83,6 +88,7 @@ export async function readConfig(
   }
 
   const result = validateConfig(parsed);
+
   if (!result.ok) {
     throw new Error(
       `Invalid config at ${paths.configPath}: ${result.errors.join(", ")}`
@@ -110,6 +116,7 @@ export async function readState(
 
   const content = await readFile(paths.statePath, "utf8");
   const state = JSON.parse(content) as PigramState;
+
   return state;
 }
 
@@ -130,6 +137,7 @@ export async function ensureProjectGitignore(cwd: string): Promise<void> {
   await mkdir(cwd, { recursive: true });
   const gitignorePath = join(cwd, ".gitignore");
   let existing = "";
+
   try {
     existing = await readFile(gitignorePath, "utf8");
   } catch {

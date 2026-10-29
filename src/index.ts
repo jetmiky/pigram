@@ -70,6 +70,7 @@ export const PIGRAM_VERSION = "0.1.0";
 
 const POLL_ERROR_BACKOFF_MS = 1000;
 const POLL_TIMEOUT_SECONDS = 30;
+
 // A 409 getUpdates conflict (another poller is winding down, e.g. after /new)
 // needs a longer pause so the competing consumer can terminate Telegram-side.
 const POLL_CONFLICT_BACKOFF_MS = 3000;
@@ -148,11 +149,13 @@ export default function pigram(pi: ExtensionAPI): void {
 	async function persistPairing(): Promise<void> {
 		if (!paths) return;
 		const state = await readState(paths);
+
 		if (pairing.pairedUserId === null) {
 			delete state.pairedUserId;
 		} else {
 			state.pairedUserId = pairing.pairedUserId;
 		}
+
 		await writeState(paths, state);
 	}
 
@@ -166,6 +169,7 @@ export default function pigram(pi: ExtensionAPI): void {
 	function getCursor(): number {
 		return cursorCache;
 	}
+
 	let cursorCache = 0;
 
 	// --- Outbound senders ---
@@ -190,6 +194,7 @@ export default function pigram(pi: ExtensionAPI): void {
 	/** Send text that is already valid Telegram HTML. Never re-escaped. */
 	async function sendHtml(chatId: number, html: string): Promise<void> {
 		if (!transport) return;
+
 		for (const chunk of chunkTelegramHtml(html)) {
 			try {
 				await transport.sendMessage({ chatId, text: chunk, parseMode: "HTML" });
@@ -204,13 +209,16 @@ export default function pigram(pi: ExtensionAPI): void {
 	async function sendMarkdown(chatId: number, markdown: string): Promise<void> {
 		if (!transport) return;
 		const richText = config?.ux?.richText ?? DEFAULT_UX.richText;
+
 		if (!richText) {
 			// Chunk long plain-text messages at paragraph boundaries.
 			for (const chunk of chunkPlainText(markdown)) {
 				await sendPlain(chatId, chunk);
 			}
+
 			return;
 		}
+
 		await sendHtml(chatId, markdownToTelegramHtml(markdown));
 	}
 
@@ -236,20 +244,26 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	async function handleCommand(chatId: number, text: string): Promise<boolean> {
 		const parsed = parseCommand(text);
+
 		if (parsed === null) return false; // not a command
 
 		switch (parsed.kind) {
 			case "start":
 			case "help": {
 				await sendHtml(chatId, formatHelpReply({ includeBotFatherCommands: true }));
+
 				return true;
 			}
+
 			case "status": {
 				const s = session.getStatus();
+
 				if (!paths) {
 					await sendPlain(chatId, "⚠️ Pigram config not loaded yet.");
+
 					return true;
 				}
+
 				const view: SessionStatusView = {
 					thinking: s.thinkingLevel,
 					busy: s.busy,
@@ -257,60 +271,87 @@ export default function pigram(pi: ExtensionAPI): void {
 					mode: paths.scope,
 					configPath: paths.configPath,
 				};
+
 				if (lockHolderPid !== undefined) {
 					view.lockHolderPid = lockHolderPid;
 					view.lockHolderSince = lockHolderSince;
 				}
+
 				if (s.provider) view.provider = s.provider;
+
 				if (s.modelId) view.model = s.modelId;
+
 				if (s.sessionName) view.sessionName = s.sessionName;
+
 				if (s.contextUsage) view.context = s.contextUsage;
+
 				if (s.usage) view.usage = s.usage;
+
 				if (s.cwd) view.rootDirectory = s.cwd;
 				await sendHtml(chatId, formatSessionStatus(view));
+
 				return true;
 			}
+
 			case "model": {
 				try {
 					await session.setModel(parsed.model);
+
 					if (parsed.thinking) {
 						const level = asThinkingLevel(parsed.thinking);
+
 						if (level) session.setThinkingLevel(level);
 					}
+
 					const s = session.getStatus();
 					await sendPlain(chatId, `✅ Active model: ${s.provider ? `${s.provider}/` : ""}${s.modelId ?? parsed.model} · thinking: ${s.thinkingLevel}`);
 				} catch (err) {
 					await sendPlain(chatId, `⚠️ ${err instanceof Error ? err.message : String(err)}`);
 				}
+
 				return true;
 			}
+
 			case "thinking": {
 				const level = asThinkingLevel(parsed.level);
+
 				if (!level) {
 					await sendPlain(chatId, `⚠️ Invalid thinking level: ${parsed.level}`);
+
 					return true;
 				}
+
 				session.setThinkingLevel(level);
 				await sendPlain(chatId, `🧠 Thinking: ${session.getStatus().thinkingLevel}`);
+
 				return true;
 			}
+
 			case "compact": {
 				await session.compact();
 				await sendPlain(chatId, "🗜️ Compaction triggered");
+
 				return true;
 			}
+
 			case "stop": {
 				askController?.cancel();
+
 				if (!session.getStatus().busy) {
 					await sendPlain(chatId, "Nothing to stop, Pi is idle.");
+
 					return true;
 				}
+
 				await session.abort();
 				await sendPlain(chatId, "🛑 Aborted");
+
 				return true;
 			}
+
 			case "new": {
 				askController?.cancel();
+
 				// Make /new safe even mid-generation: abort any in-flight turn
 				// and drop queued follow-ups before resetting, so the new session
 				// starts clean and no stale reply lands in it.
@@ -319,42 +360,56 @@ export default function pigram(pi: ExtensionAPI): void {
 					activeTurn.stopTyping?.();
 					activeTurn = undefined;
 				}
+
 				followUps.clear();
 				lastReplyMarkdown = undefined;
 				pendingNotify = undefined;
 				await performNewSession(chatId, parsed.name);
+
 				return true;
 			}
+
 			case "resend": {
 				if (!lastReplyMarkdown) {
 					await sendPlain(chatId, "ℹ️ Nothing to resend yet — no assistant reply in this session.");
+
 					return true;
 				}
+
 				// Replay the stored reply verbatim; no new turn, no LLM call.
 				await sendMarkdown(chatId, lastReplyMarkdown);
+
 				return true;
 			}
+
 			case "git": {
 				if (!parsed.git.ok) {
 					await sendPlain(chatId, parsed.git.message);
+
 					return true;
 				}
+
 				// `nb` mutates the working tree (creates+switches a branch); refuse
 				// it mid-turn so a new branch never lands under a running prompt.
 				if (parsed.git.kind === "nb" && session.getStatus().busy) {
 					await sendPlain(chatId, 'git nb failed: pi is busy; send /stop first');
+
 					return true;
 				}
+
 				const gitCwd = session.getStatus().cwd ?? process.cwd();
 				const spec = getGitExecSpec(parsed.git);
 				const reply = await runGitSpec(spec, runGit, gitCwd);
 				// Git output is plain terminal text; send verbatim (no Markdown render).
 				await sendPlain(chatId, reply);
+
 				return true;
 			}
+
 			case "unknown":
 			default: {
 				await sendPlain(chatId, UNKNOWN_COMMAND_MESSAGE);
+
 				return true;
 			}
 		}
@@ -364,15 +419,19 @@ export default function pigram(pi: ExtensionAPI): void {
 	async function routeMessage(chatId: number, userId: number, msg: InboundMessage): Promise<void> {
 		// Pairing gate.
 		const decision = decidePairing(pairing, userId);
+
 		if (decision.kind === "reject") {
 			await sendPlain(chatId, "🔒 This bot is paired with another user.");
+
 			return;
 		}
+
 		if (decision.kind === "pair") {
 			pairing = applyPairing(pairing, decision);
 			await persistPairing();
 			await sendPlain(chatId, "🔗 Telegram bridge paired with this account.");
 		}
+
 		activeChatId = chatId;
 
 		// Commands retain priority over a pending text question. Lifecycle
@@ -381,6 +440,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		// eligible message.
 		if (msg.text) {
 			const route = routeInboundText(msg.text, askController?.hasPendingText() ?? false);
+
 			if (route === "command") {
 				if (await handleCommand(chatId, msg.text)) return;
 			} else if (route === "dialog_answer") {
@@ -391,8 +451,10 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Otherwise forward to pi as a prompt (queue if a turn is in flight).
 		if (activeTurn) {
 			followUps.enqueue(msg);
+
 			return;
 		}
+
 		await deliverPrompt(chatId, userId, msg);
 	}
 
@@ -401,6 +463,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		// immediately; the reply arrives later via message_update / agent_end.
 		const streamPreviews = config?.ux?.streamPreviews ?? DEFAULT_UX.streamPreviews;
 		const richText = config?.ux?.richText ?? DEFAULT_UX.richText;
+
 		// A reply session owns final rich delivery whenever rich text is enabled.
 		// streamPreviews controls only whether partial updates are emitted.
 		const preview =
@@ -412,9 +475,11 @@ export default function pigram(pi: ExtensionAPI): void {
 						richTables: config?.ux?.richTables ?? DEFAULT_UX.richTables,
 					})
 				: undefined;
+
 		// A repeating typing indicator gives the user liveness feedback while
 		// pi works (and covers the gap before the first streamed token arrives).
 		const t = transport; // capture for callback narrowing
+
 		const typing = t
 			? new TypingIndicator(chatId, {
 					sendChatAction: (o) => t.sendChatAction(o),
@@ -422,6 +487,7 @@ export default function pigram(pi: ExtensionAPI): void {
 					clearInterval: globalThis.clearInterval.bind(globalThis),
 				})
 			: undefined;
+
 		typing?.start();
 		activeTurn = { chatId, userId, ...(preview ? { preview } : {}), stopTyping: () => typing?.stop() };
 		askController?.beginTurn({ chatId, userId });
@@ -431,13 +497,18 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	async function onUpdate(update: TelegramUpdate): Promise<void> {
 		cursorCache = update.update_id;
+
 		if (update.callback_query) {
 			await askController?.handleCallbackQuery(update.callback_query);
+
 			return;
 		}
+
 		const message = update.message;
+
 		if (!message || !message.from) return;
 		const inbound: InboundMessage = {};
+
 		if (message.text !== undefined) inbound.text = message.text;
 		await routeMessage(message.chat.id, message.from.id, inbound);
 	}
@@ -455,10 +526,12 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Try to acquire the poller lock to prevent multiple instances
 		// from polling the same bot token simultaneously.
 		let lockPath: string | undefined;
+
 		if (paths) {
 			lockPath = join(paths.tempDir, "lock.json");
 			const tokenHash = createHash("sha256").update(config.botToken).digest("hex");
 			const lockResult = await tryAcquireLock(lockPath, tokenHash);
+
 			if (!lockResult.acquired) {
 				lockHolderPid = lockResult.holderPid;
 				lockHolderSince = lockResult.holderSince;
@@ -466,8 +539,10 @@ export default function pigram(pi: ExtensionAPI): void {
 					"pigram",
 					`held by PID ${lockResult.holderPid} (since ${lockResult.holderSince})`,
 				);
+
 				return;
 			}
+
 			lockHolderPid = undefined;
 			lockHolderSince = undefined;
 			stopHeartbeat = startHeartbeat(lockPath);
@@ -476,16 +551,20 @@ export default function pigram(pi: ExtensionAPI): void {
 		try {
 			transport = createHttpTransport({ botToken: config.botToken });
 			askController = new TelegramAskController({ transport });
+
 			if (paths && lockPath) {
 				const state = await readState(paths);
 				state.botId = me.id;
+
 				if (me.username) state.botUsername = me.username;
 				cursorCache = state.lastUpdateId;
 				await writeState(paths, state);
 			}
+
 			abortController = new AbortController();
 			const myController = abortController;
 			pollingActive = true;
+
 			// Surface a persistent footer line so the user can see at a glance that
 			// Telegram is connected, which scope is active, and which config loaded.
 			if (paths) {
@@ -498,6 +577,7 @@ export default function pigram(pi: ExtensionAPI): void {
 					}),
 				);
 			}
+
 			const poller = new TelegramPoller({
 				transport,
 				handler: onUpdate,
@@ -510,6 +590,7 @@ export default function pigram(pi: ExtensionAPI): void {
 					latestCtx?.ui.setStatus("pigram", `error: ${err instanceof Error ? err.message : String(err)}`);
 				},
 			});
+
 			void poller.start(myController.signal).finally(() => {
 				// Only clear the flag if WE are still the active poller. After a
 				// /new, a replacement poller may already own pollingActive; an old
@@ -537,11 +618,13 @@ export default function pigram(pi: ExtensionAPI): void {
 		askController?.endTurn();
 		stopHeartbeat?.();
 		stopHeartbeat = undefined;
+
 		// Best-effort lock release; stale recovery handles crash cases.
 		if (paths) {
 			const lockPath = join(paths.tempDir, "lock.json");
 			void releaseLock(lockPath);
 		}
+
 		abortController?.abort();
 		abortController = undefined;
 		pollingActive = false;
@@ -568,16 +651,20 @@ export default function pigram(pi: ExtensionAPI): void {
 	 */
 	async function performNewSession(chatId: number, name?: string): Promise<void> {
 		const cmdCtx = latestCommandCtx;
+
 		if (!cmdCtx) {
 			await sendPlain(
 				chatId,
 				"⚠️ Can't start a new session from Telegram in this run. Run /pigram-connect in the pi terminal once, then /new will work. (You can also start a fresh session directly in the terminal.)",
 			);
+
 			return;
 		}
+
 		if (activeTurn) {
 			// Defensive: caller already aborts, but never reset mid-turn.
 			await sendPlain(chatId, "⚠️ pi is busy; send /stop first, then /new.");
+
 			return;
 		}
 
@@ -589,6 +676,7 @@ export default function pigram(pi: ExtensionAPI): void {
 
 		try {
 			const parentSession = cmdCtx.sessionManager.getSessionFile();
+
 			const result = await cmdCtx.newSession({
 				...(parentSession ? { parentSession } : {}),
 				setup: async (sessionManager) => {
@@ -607,6 +695,7 @@ export default function pigram(pi: ExtensionAPI): void {
 					latestCtx = nextCtx;
 				},
 			});
+
 			if (result.cancelled) {
 				await sendPlain(chatId, "New session cancelled");
 			}
@@ -625,22 +714,27 @@ export default function pigram(pi: ExtensionAPI): void {
 		latestCtx = ctx;
 		latestCommandCtx = ctx;
 		await loadConfig(ctx.cwd, scope);
+
 		if (!paths) return;
 
 		const token = (config?.botToken ?? (await ctx.ui.input("Telegram bot token", "123456:ABCDEF...")))?.trim();
+
 		if (!token) {
 			ctx.ui.notify("Setup cancelled: no token provided", "warning");
+
 			return;
 		}
 
 		// Validate the token by calling getMe.
 		const probe = createHttpTransport({ botToken: token });
 		let username = "unknown";
+
 		try {
 			const me = await probe.getMe();
 			username = me.username ?? "unknown";
 		} catch (err) {
 			ctx.ui.notify(`Invalid bot token: ${err instanceof Error ? err.message : String(err)}`, "error");
+
 			return;
 		}
 
@@ -655,9 +749,11 @@ export default function pigram(pi: ExtensionAPI): void {
 			delivery: { terminalReplies: forwardTerminalReplies ? "all" : "off" },
 		};
 		await writeConfig(paths, config);
+
 		if (paths.scope === "project") {
 			await ensureProjectGitignore(ctx.cwd);
 		}
+
 		ctx.ui.notify(`Pigram connected: @${username}`, "info");
 		ctx.ui.notify(`Config stored at ${paths.configPath}`, "info");
 		ctx.ui.notify("Send /start to your bot in Telegram to pair this account.", "info");
@@ -682,10 +778,13 @@ export default function pigram(pi: ExtensionAPI): void {
 			latestCommandCtx = ctx;
 			const scope = parseScopeArg(args);
 			await loadConfig(ctx.cwd, scope);
+
 			if (!config?.botToken) {
 				await runSetup(ctx, scope);
+
 				return;
 			}
+
 			await startPolling();
 			ctx.ui.notify("Pigram bridge connected", "info");
 		},
@@ -706,6 +805,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => {
 			latestCtx = ctx;
 			latestCommandCtx = ctx;
+
 			const lines = [
 				`config: ${paths?.configPath ?? "not loaded"}`,
 				`scope: ${paths?.scope ?? "n/a"}`,
@@ -728,6 +828,7 @@ export default function pigram(pi: ExtensionAPI): void {
 							: "stopped"
 				}`,
 			];
+
 			ctx.ui.notify(lines.join(" | "), "info");
 		},
 	});
@@ -740,23 +841,31 @@ export default function pigram(pi: ExtensionAPI): void {
 			latestCtx = ctx;
 			latestCommandCtx = ctx;
 			const parsed = parseNotifyArgs(args);
+
 			if (!parsed.ok) {
 				ctx.ui.notify(parsed.message, "warning");
+
 				return;
 			}
+
 			if (parsed.mode === "off") {
 				pendingNotify = "off";
 				ctx.ui.notify("Pigram notify: off", "info");
+
 				return;
 			}
+
 			const chatId = activeChatId ?? pairing.pairedUserId ?? undefined;
+
 			if (chatId === undefined) {
 				ctx.ui.notify(
 					"No Telegram chat known yet. Pair first: send /start to your bot in Telegram once.",
 					"warning",
 				);
+
 				return;
 			}
+
 			pendingNotify = { mode: parsed.mode, chatId };
 			ctx.ui.notify(
 				parsed.mode === "once"
@@ -782,10 +891,12 @@ export default function pigram(pi: ExtensionAPI): void {
 		parameters: buildAttachToolParams(),
 		async execute(_toolCallId, params) {
 			const result = await executeAttach(params as { paths: string[] }, attachments);
+
 			// Flush immediately if we know the active chat.
 			if (transport && activeChatId !== undefined) {
 				await flushAttachments(attachments, transport, activeChatId);
 			}
+
 			return {
 				content: [{ type: "text", text: `Queued ${result.added.length} Telegram attachment(s).` }],
 				details: { paths: result.added },
@@ -801,6 +912,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		// gracefully when none has been captured yet.
 		latestCtx = ctx;
 		await loadConfig(ctx.cwd).catch(() => undefined);
+
 		if (config?.botToken) {
 			await startPolling().catch(() => undefined);
 
@@ -811,11 +923,13 @@ export default function pigram(pi: ExtensionAPI): void {
 		// send the confirmation and mark the request consumed so a later
 		// resume/fork of this session never re-fires it.
 		const request = findPendingReconnectRequest(ctx.sessionManager.getEntries());
+
 		if (request) {
 			try {
 				if (transport) {
 					await sendPlain(request.chatId, formatNewSessionConfirmation(request));
 				}
+
 				pi.appendEntry(RECONNECT_CONSUMED_ENTRY_TYPE, {
 					requestId: request.requestId,
 				} satisfies ReconnectConsumed);
@@ -850,10 +964,13 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	pi.on("message_update", async (event) => {
 		const turn = activeTurn;
+
 		if (!turn?.preview) return;
 		const message = event.message as AgentMessageLike;
+
 		if (message?.role !== "assistant") return;
 		const partial = getAgentMessageText(message);
+
 		if (!partial) return;
 		// Previews are best-effort; PreviewSession swallows transport errors.
 		await turn.preview.update(partial);
@@ -878,6 +995,7 @@ export default function pigram(pi: ExtensionAPI): void {
 			config?.delivery?.terminalReplies ?? DEFAULT_DELIVERY.terminalReplies ?? "off",
 			pairing.pairedUserId ?? undefined,
 		);
+
 		const consumed = consumePendingNotify(
 			effectiveNotify,
 			// exactOptionalPropertyTypes: only include fields that are defined.
@@ -886,17 +1004,20 @@ export default function pigram(pi: ExtensionAPI): void {
 				...(resolved.errorMessage ? { errorMessage: resolved.errorMessage } : {}),
 			},
 		);
+
 		// Only mutate explicit command state. Config-driven "all" remains a
 		// policy and is re-resolved on each turn rather than becoming an override.
 		if (pendingNotify !== undefined && pendingNotify !== "off") {
 			pendingNotify = consumed.pending;
 		}
+
 		if (!turn && consumed.deliver) {
 			if (consumed.deliver.kind === "text") {
 				await sendMarkdown(consumed.deliver.chatId, consumed.deliver.markdown);
 			} else {
 				await sendPlain(consumed.deliver.chatId, consumed.deliver.line);
 			}
+
 			if (transport) {
 				await flushAttachments(attachments, transport, consumed.deliver.chatId).catch(() => undefined);
 			}
@@ -927,6 +1048,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		// Drain one queued follow-up, if any, starting a fresh turn.
 		askController?.endTurn();
 		const next = followUps.dequeue();
+
 		if (next) await deliverPrompt(turn.chatId, turn.userId, next);
 	});
 }
@@ -934,7 +1056,10 @@ export default function pigram(pi: ExtensionAPI): void {
 /** Parse an optional "local"|"global" scope argument. */
 function parseScopeArg(args: string): Scope | undefined {
 	const token = args.trim().toLowerCase();
+
 	if (token === "local" || token === "project") return "project";
+
 	if (token === "global") return "global";
+
 	return undefined;
 }

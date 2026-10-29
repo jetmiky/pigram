@@ -234,6 +234,7 @@ export function createHttpTransport(opts: {
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify(body),
 		};
+
 		if (options?.signal) {
 			fetchOptions.signal = options.signal;
 		}
@@ -241,9 +242,11 @@ export function createHttpTransport(opts: {
 		const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/${method}`, fetchOptions);
 
 		const data = (await response.json()) as TelegramApiResponse<TResponse>;
+
 		if (!data.ok || data.result === undefined) {
 			throw new Error(data.description ?? `Telegram API ${method} failed`);
 		}
+
 		return data.result;
 	}
 
@@ -274,9 +277,11 @@ export function createHttpTransport(opts: {
 		});
 
 		const data = (await response.json()) as TelegramApiResponse<TResponse>;
+
 		if (!data.ok || data.result === undefined) {
 			throw new Error(data.description ?? `Telegram API ${method} failed`);
 		}
+
 		return data.result;
 	}
 
@@ -290,7 +295,9 @@ export function createHttpTransport(opts: {
 
 		async getUpdates(opts, signal) {
 			const body: Record<string, unknown> = {};
+
 			if (opts.offset !== undefined) body.offset = opts.offset;
+
 			if (opts.timeout !== undefined) body.timeout = opts.timeout;
 
 			// Telegram persists the allowed_updates setting per bot token when
@@ -311,6 +318,7 @@ export function createHttpTransport(opts: {
 			const serverTimeoutMs = (opts.timeout ?? 0) * 1000;
 			const deadlineSignal = AbortSignal.timeout(serverTimeoutMs + getUpdatesTimeoutMarginMs);
 			const requestSignal = signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal;
+
 			return callTelegram<TelegramUpdate[]>("getUpdates", body, { signal: requestSignal });
 		},
 
@@ -319,7 +327,9 @@ export function createHttpTransport(opts: {
 				chat_id: opts.chatId,
 				text: opts.text,
 			};
+
 			if (opts.parseMode !== undefined) body.parse_mode = opts.parseMode;
+
 			if (opts.replyMarkup !== undefined) body.reply_markup = opts.replyMarkup;
 
 			return callTelegram<{ message_id: number }>("sendMessage", body);
@@ -331,7 +341,9 @@ export function createHttpTransport(opts: {
 				message_id: opts.messageId,
 				text: opts.text,
 			};
+
 			if (opts.parseMode !== undefined) body.parse_mode = opts.parseMode;
+
 			if (opts.replyMarkup !== undefined) body.reply_markup = opts.replyMarkup;
 
 			await callTelegram<true>("editMessageText", body);
@@ -365,6 +377,7 @@ export function createHttpTransport(opts: {
 			const body: Record<string, unknown> = {
 				callback_query_id: opts.callbackQueryId,
 			};
+
 			if (opts.text !== undefined) body.text = opts.text;
 
 			await callTelegram<true>("answerCallbackQuery", body);
@@ -374,6 +387,7 @@ export function createHttpTransport(opts: {
 			const fields: Record<string, string> = {
 				chat_id: opts.chatId.toString(),
 			};
+
 			if (opts.caption !== undefined) fields.caption = opts.caption;
 
 			return callTelegramMultipart<{ message_id: number }>(
@@ -389,6 +403,7 @@ export function createHttpTransport(opts: {
 			const fields: Record<string, string> = {
 				chat_id: opts.chatId.toString(),
 			};
+
 			if (opts.caption !== undefined) fields.caption = opts.caption;
 
 			return callTelegramMultipart<{ message_id: number }>(

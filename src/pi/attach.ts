@@ -23,6 +23,7 @@ export class AttachmentQueue {
     };
 
     this.queue.push(attachment);
+
     return attachment;
   }
 
@@ -33,15 +34,18 @@ export class AttachmentQueue {
     }
 
     const added: Attachment[] = [];
+
     for (const path of paths) {
       added.push(this.add(path));
     }
+
     return added;
   }
 
   drain(): Attachment[] {
     const drained = [...this.queue];
     this.queue = [];
+
     return drained;
   }
 
@@ -99,9 +103,11 @@ export async function executeAttach(
 
   for (const path of params.paths) {
     const stats = await statFile(path);
+
     if (!stats.isFile()) {
       throw new Error(`Not a file: ${path}`);
     }
+
     queue.add(path);
     added.push(path);
   }

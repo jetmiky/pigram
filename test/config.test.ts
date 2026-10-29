@@ -7,6 +7,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(true);
+
     if (result.ok) {
       expect(result.config.botToken).toBe("123456:ABC-DEF");
       expect(result.config.ux).toEqual({
@@ -23,9 +24,11 @@ describe("PigramConfig validation", () => {
       botToken: "789:XYZ",
       ux: { richText: false, streamPreviews: false },
     };
+
     const result = validateConfig(input);
 
     expect(result.ok).toBe(true);
+
     if (result.ok) {
       expect(result.config.botToken).toBe("789:XYZ");
       expect(result.config.ux).toEqual({
@@ -41,6 +44,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors.some((err) => err.includes("botToken"))).toBe(true);
@@ -52,6 +56,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
@@ -62,6 +67,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
@@ -72,6 +78,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
@@ -82,6 +89,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
@@ -92,9 +100,11 @@ describe("PigramConfig validation", () => {
       botToken: "valid-token",
       ux: { richText: true, unknownUxField: "value" },
     };
+
     const result = validateConfig(input);
 
     expect(result.ok).toBe(false);
+
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
@@ -105,6 +115,7 @@ describe("PigramConfig validation", () => {
     const result = validateConfig(input);
 
     expect(result.ok).toBe(true);
+
     if (result.ok) {
       expect(result.config.ux).toEqual({
         richText: false,
@@ -117,6 +128,7 @@ describe("PigramConfig validation", () => {
   test("accepts automatic delivery of terminal replies", () => {
     const result = validateConfig({ botToken: "token", delivery: { terminalReplies: "all" } });
     expect(result.ok).toBe(true);
+
     if (result.ok) expect(result.config.delivery).toEqual({ terminalReplies: "all" });
   });
 

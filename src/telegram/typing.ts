@@ -43,6 +43,7 @@ export class TypingIndicator {
 	stop(): void {
 		if (!this.running) return;
 		this.running = false;
+
 		if (this.timerId !== undefined) {
 			this.deps.clearInterval(this.timerId);
 			this.timerId = undefined;

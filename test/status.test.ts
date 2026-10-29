@@ -94,6 +94,7 @@ describe("formatSessionStatus", () => {
 		const out = formatSessionStatus(
 			baseView({ context: { tokens: 1_400_000, contextWindow: 200_000, percent: 73.4 } }),
 		);
+
 		expect(out).toContain("- Context: 1.4M / 200k (73%)");
 	});
 
@@ -106,6 +107,7 @@ describe("formatSessionStatus", () => {
 		const out = formatSessionStatus(
 			baseView({ context: { tokens: null, contextWindow: 200_000, percent: null } }),
 		);
+
 		expect(out).toContain("- Context: ? / 200k");
 	});
 
@@ -128,6 +130,7 @@ describe("formatSessionStatus", () => {
 		const out = formatSessionStatus(
 			baseView({ rootDirectory: "/tmp/<a>&b", configPath: "/tmp/<a>&b/.pi/pigram.json" }),
 		);
+
 		expect(out).toContain("- Root Directory: <code>/tmp/&lt;a&gt;&amp;b</code>");
 		expect(out).toContain("- Loaded Config: <code>/tmp/&lt;a&gt;&amp;b/.pi/pigram.json</code>");
 	});

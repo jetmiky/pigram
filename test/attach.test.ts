@@ -74,6 +74,7 @@ describe("AttachmentQueue", () => {
     for (let i = 0; i < MAX_ATTACHMENTS_PER_TURN; i++) {
       queue.add(`/tmp/file${i}.txt`);
     }
+
     expect(queue.size).toBe(MAX_ATTACHMENTS_PER_TURN);
 
     // Attempt to add one more
@@ -103,6 +104,7 @@ describe("AttachmentQueue", () => {
     for (let i = 0; i < 8; i++) {
       queue.add(`/tmp/file${i}.txt`);
     }
+
     expect(queue.size).toBe(8);
 
     // Attempt to add 3 more (would exceed MAX of 10)
@@ -120,6 +122,7 @@ describe("AttachmentQueue", () => {
       { length: MAX_ATTACHMENTS_PER_TURN },
       (_, i) => `/tmp/file${i}.txt`
     );
+
     const added = queue.addMany(paths);
 
     expect(added).toHaveLength(MAX_ATTACHMENTS_PER_TURN);
@@ -144,6 +147,7 @@ describe("flushAttachments", () => {
     const mockSender: AttachmentSender = {
       sendDocument: async (opts) => {
         calls.push(opts);
+
         return { message_id: 123 };
       },
     };
@@ -247,6 +251,7 @@ describe("executeAttach", () => {
 
     const fakeStatFile = async (path: string) => {
       checkedPaths.push(path);
+
       return {
         isFile: () => true,
       };

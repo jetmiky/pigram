@@ -9,6 +9,7 @@ test("getAgentMessageText concatenates text blocks in order", () => {
 			{ type: "text", text: "world" },
 		],
 	};
+
 	expect(getAgentMessageText(msg)).toBe("Hello world");
 });
 
@@ -21,6 +22,7 @@ test("getAgentMessageText ignores thinking and toolCall blocks", () => {
 			{ type: "toolCall", text: "should-not-appear" },
 		],
 	};
+
 	expect(getAgentMessageText(msg)).toBe("answer");
 });
 
@@ -39,6 +41,7 @@ test("getAgentMessageText skips malformed blocks", () => {
 		role: "assistant",
 		content: [null, "string-block", { type: "text", text: "ok" }, { type: "text" }],
 	};
+
 	expect(getAgentMessageText(msg)).toBe("ok");
 });
 
@@ -49,6 +52,7 @@ test("extractAssistantText picks the last assistant message", () => {
 		{ role: "user", content: [{ type: "text", text: "again" }] },
 		{ role: "assistant", content: [{ type: "text", text: "second" }] },
 	];
+
 	expect(extractAssistantText(messages).text).toBe("second");
 });
 
@@ -56,6 +60,7 @@ test("extractAssistantText surfaces stopReason and errorMessage", () => {
 	const messages: AgentMessageLike[] = [
 		{ role: "assistant", content: [], stopReason: "error", errorMessage: "boom" },
 	];
+
 	const outcome = extractAssistantText(messages);
 	expect(outcome.stopReason).toBe("error");
 	expect(outcome.errorMessage).toBe("boom");
@@ -66,6 +71,7 @@ test("extractAssistantText reports aborted turns", () => {
 	const messages: AgentMessageLike[] = [
 		{ role: "assistant", content: [{ type: "text", text: "partial" }], stopReason: "aborted" },
 	];
+
 	const outcome = extractAssistantText(messages);
 	expect(outcome.stopReason).toBe("aborted");
 	expect(outcome.text).toBe("partial");
@@ -113,6 +119,7 @@ test("getAgentMessageText strips leaked thinking tags from text blocks", () => {
 		role: "assistant",
 		content: [{ type: "text", text: "<thinking>\n19 * 23 = 437\n</thinking>\n\n19 × 23 = 437" }],
 	};
+
 	expect(getAgentMessageText(msg)).toBe("19 × 23 = 437");
 });
 

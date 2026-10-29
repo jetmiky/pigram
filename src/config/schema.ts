@@ -57,6 +57,7 @@ export function validateConfig(input: unknown): ValidationResult {
     const errors = [...Value.Errors(PigramConfigSchema, input)].map(
       (err) => `${err.path}: ${err.message}`
     );
+
     return { ok: false, errors };
   }
 

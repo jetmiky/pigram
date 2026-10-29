@@ -15,11 +15,14 @@ class FakeTransport implements Pick<TelegramTransport, "sendMessage" | "editMess
 
 	async sendMessage(opts: { chatId: number; text: string; replyMarkup?: unknown }) {
 		this.sendMessageCalls.push(opts);
+
 		if (this.failSends) throw new Error("send failed");
+
 		return { message_id: 99 };
 	}
 	async editMessageText(opts: { chatId: number; messageId: number; text: string; replyMarkup?: unknown }) {
 		this.editMessageTextCalls.push(opts);
+
 		if (this.failEdits) throw new Error("edit failed");
 	}
 	async answerCallbackQuery(opts: { callbackQueryId: string; text?: string }) {
@@ -42,6 +45,7 @@ function query(data: string, userId = 7, chatId = 42): TelegramCallbackQuery {
 
 function runTool(controller: TelegramAskController, params: TelegramAskToolParams, signal?: AbortSignal) {
 	const tool = createTelegramAskTool(controller);
+
 	return tool.execute("call-1", params as never, signal, undefined, {} as never);
 }
 
@@ -56,6 +60,7 @@ describe("telegram_ask extension tool boundary", () => {
 			question: "Pick one",
 			options: [{ label: "Friendly", value: "friendly" }],
 		});
+
 		expect(transport.sendMessageCalls[0]?.replyMarkup).toEqual({
 			inline_keyboard: [[{ text: "Friendly", callback_data: "ask-1:0" }]],
 		});

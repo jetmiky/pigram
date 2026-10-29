@@ -12,6 +12,7 @@ function createFakeDeps() {
 		},
 		setInterval: (fn: () => void) => {
 			cb = fn;
+
 			return 1 as unknown as number;
 		},
 		clearInterval: () => {
@@ -83,6 +84,7 @@ describe("TypingIndicator", () => {
 
 	test("transport error is swallowed — does not throw", async () => {
 		const calls: Array<{ chatId: number; action: string }> = [];
+
 		const deps: TypingDeps = {
 			sendChatAction: async () => {
 				throw new Error("network down");

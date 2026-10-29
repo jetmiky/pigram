@@ -31,6 +31,7 @@ export type LockResult =
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
@@ -53,6 +54,7 @@ export async function tryAcquireLock(
   tokenHash: string,
 ): Promise<LockResult> {
   const now = new Date().toISOString();
+
   const payload: LockInfo = {
     pid: process.pid,
     tokenHash,
@@ -62,6 +64,7 @@ export async function tryAcquireLock(
 
   try {
     await writeFile(lockPath, JSON.stringify(payload), { flag: "wx" });
+
     return { acquired: true };
   } catch (err: unknown) {
     // EEXIST means another instance wrote first — check who holds it.
@@ -70,12 +73,14 @@ export async function tryAcquireLock(
     }
 
     let existing: LockInfo;
+
     try {
       existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
     } catch {
       // Lock file unreadable (corrupt, partial write) — steal it.
       await writeFile(lockPath, JSON.stringify(payload));
       const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+
       return verify.pid === process.pid
         ? { acquired: true }
         : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -90,6 +95,7 @@ export async function tryAcquireLock(
     if (existing.tokenHash !== tokenHash) {
       await writeFile(lockPath, JSON.stringify(payload));
       const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+
       return verify.pid === process.pid
         ? { acquired: true }
         : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -103,6 +109,7 @@ export async function tryAcquireLock(
     // Same bot, holder PID dead → steal.
     await writeFile(lockPath, JSON.stringify(payload));
     const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+
     return verify.pid === process.pid
       ? { acquired: true }
       : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -124,6 +131,7 @@ export async function releaseLock(lockPath: string): Promise<void> {
 export async function touchHeartbeat(lockPath: string): Promise<void> {
   try {
     const existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+
     if (existing.pid === process.pid) {
       existing.heartbeat = new Date().toISOString();
       await writeFile(lockPath, JSON.stringify(existing));

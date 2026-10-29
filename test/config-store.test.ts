@@ -99,6 +99,7 @@ describe("ConfigStore", () => {
   describe("readConfig and writeConfig", () => {
     test("roundtrips config correctly", async () => {
       const paths = await resolveScope({ cwd: testCwd, homeDir: testHomeDir });
+
       const config: PigramConfig = {
         botToken: "test-token-123",
         ux: {
@@ -143,6 +144,7 @@ describe("ConfigStore", () => {
     test("state is written to separate path, not in config file", async () => {
       const paths = await resolveScope({ cwd: testCwd, homeDir: testHomeDir });
       const config: PigramConfig = { botToken: "test-token" };
+
       const state = {
         lastUpdateId: 123,
         pairedUserId: 456,
@@ -181,6 +183,7 @@ describe("ConfigStore", () => {
 
     test("writeState then readState roundtrips", async () => {
       const paths = await resolveScope({ cwd: testCwd, homeDir: testHomeDir });
+
       const state = {
         lastUpdateId: 999,
         pairedUserId: 111,

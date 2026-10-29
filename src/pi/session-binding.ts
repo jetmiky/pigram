@@ -46,6 +46,7 @@ function mimeFromPath(path: string): string {
 
 async function toImageContent(path: string): Promise<ImageContent> {
 	const bytes = await readFile(path);
+
 	return {
 		type: "image",
 		data: bytes.toString("base64"),
@@ -62,7 +63,9 @@ async function toImageContent(path: string): Promise<ImageContent> {
 export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): AgentSessionPort {
 	function requireCtx(): ExtensionContext {
 		const ctx = getCtx();
+
 		if (!ctx) throw new Error("No active pi session context");
+
 		return ctx;
 	}
 
@@ -70,25 +73,34 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 		getStatus(): SessionStatus {
 			const ctx = getCtx();
 			const model = ctx?.model;
+
 			const status: SessionStatus = {
 				thinkingLevel: pi.getThinkingLevel() as ThinkingLevel,
 				busy: ctx ? !ctx.isIdle() : false,
 			};
+
 			if (model?.id) status.modelId = model.id;
+
 			if (model?.provider) status.provider = model.provider;
+
 			if (ctx) {
 				const sessionName = ctx.sessionManager.getSessionName();
+
 				if (sessionName) status.sessionName = sessionName;
+
 				if (ctx.cwd) status.cwd = ctx.cwd;
 				const contextUsage = ctx.getContextUsage();
+
 				if (contextUsage) status.contextUsage = contextUsage;
 				status.usage = sumAssistantUsage(ctx.sessionManager.getEntries());
 			}
+
 			return status;
 		},
 
 		async setModel(modelId: string): Promise<void> {
 			const ctx = requireCtx();
+
 			// Resolve the specifier against the registry. A model id can itself
 			// contain a slash (e.g. "kr/claude-sonnet-4.5" under "9router"), so we
 			// only treat a prefix as a provider when it is a KNOWN provider —
@@ -98,8 +110,10 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 				currentProvider: ctx.model?.provider ?? "",
 				specifier: modelId,
 			});
+
 			if (!resolution.ok) throw new Error(`Unknown model: ${modelId}`);
 			const ok = await pi.setModel(resolution.model);
+
 			if (!ok) throw new Error(`No API key available for model: ${modelId}`);
 		},
 
@@ -109,6 +123,7 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 
 		async compact(): Promise<void> {
 			const ctx = requireCtx();
+
 			// waitForIdle() is command-context-only; the event context exposes a
 			// synchronous isIdle() instead. Compaction during streaming is
 			// rejected by pi anyway, so we surface a clear error rather than
@@ -116,6 +131,7 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 			if (!ctx.isIdle()) {
 				throw new Error("Cannot compact while pi is busy — send /stop first.");
 			}
+
 			// ctx.compact() triggers compaction without awaiting completion.
 			ctx.compact();
 		},
