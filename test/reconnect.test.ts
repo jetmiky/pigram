@@ -74,6 +74,34 @@ describe("findPendingReconnectRequest", () => {
 		).toBeUndefined();
 	});
 
+	test.each([
+		[null],
+		[[]],
+		[{ requestId: "", chatId: 42 }],
+		[{ requestId: "r2", chatId: "42" }],
+		[{ requestId: "r2", chatId: 1.5 }],
+		[{ requestId: "r2", chatId: Number.NaN }],
+		[{ requestId: "r2", chatId: 42, sessionName: 123 }],
+		[{ requestId: "r2", chatId: 42, truncated: "yes" }],
+	])("skips malformed newest requests and retains the valid older request (%j)", (data) => {
+		const older: ReconnectRequest = { requestId: "r1", chatId: 42 };
+
+		expect(findPendingReconnectRequest([
+			requestEntry(older),
+			{ type: "custom", customType: RECONNECT_REQUEST_ENTRY_TYPE, data },
+		])).toEqual(older);
+	});
+
+	test("ignores malformed consumed markers", () => {
+		const request: ReconnectRequest = { requestId: "r1", chatId: 42 };
+
+		expect(findPendingReconnectRequest([
+			requestEntry(request),
+			{ type: "custom", customType: RECONNECT_CONSUMED_ENTRY_TYPE, data: null },
+			{ type: "custom", customType: RECONNECT_CONSUMED_ENTRY_TYPE, data: { requestId: 1 } },
+		])).toEqual(request);
+	});
+
 	test("returns undefined when there are no entries", () => {
 		expect(findPendingReconnectRequest([])).toBeUndefined();
 	});
