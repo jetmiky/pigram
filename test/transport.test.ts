@@ -57,7 +57,7 @@ describe("TelegramTransport", () => {
 		const fake = new FakeFetch();
 		fake.queueResponse({
 			ok: true,
-			result: { id: 123, username: "testbot", is_bot: true, first_name: "Test" },
+			result: { id: 123, username: "testbot", is_bot: true, first_name: "Test", can_join_groups: true },
 		});
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
@@ -103,6 +103,26 @@ describe("TelegramTransport", () => {
 			timeout: 30,
 			allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
 		});
+	});
+
+	test("getUpdates accepts callback queries with Telegram metadata", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({
+			ok: true,
+			result: [{
+				update_id: 1,
+				callback_query: {
+					id: "q-1",
+					from: { id: 7, is_bot: false, first_name: "User" },
+					message: { message_id: 99, date: 1, chat: { id: 42, type: "private" } },
+					chat_instance: "instance",
+					data: "ask-1:0",
+				},
+			}],
+		});
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		expect((await transport.getUpdates({}))[0]?.callback_query?.data).toBe("ask-1:0");
 	});
 
 	test("getUpdates always pins allowed_updates including callback_query", async () => {
@@ -301,6 +321,76 @@ describe("TelegramTransport", () => {
 		fake.expectLastBody({ callback_query_id: "cb-123", text: "acknowledged" });
 	});
 
+	test.each([
+		[null],
+		[[]],
+		[42],
+		[{ ok: "true", result: {} }],
+		[{ ok: true, description: 123, result: {} }],
+	])("rejects malformed Telegram envelopes (%j)", async (payload) => {
+		const fake = new FakeFetch();
+		fake.queueResponse(payload);
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getMe()).rejects.toThrow("Invalid Telegram API getMe response");
+	});
+
+	test.each([
+		[null],
+		[{}],
+		[{ id: "123", is_bot: true, first_name: "Bot" }],
+		[{ id: -1, is_bot: true, first_name: "Bot" }],
+		[{ id: 123, is_bot: true, first_name: "Bot", username: 1 }],
+	])("rejects malformed bot identities (%j)", async (result) => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getMe()).rejects.toThrow("Invalid Telegram API getMe result");
+	});
+
+	test.each([
+		{ result: [{ update_id: "1" }] },
+		{ result: [{ update_id: -1 }] },
+		{ result: [{ update_id: 1, message: { message_id: 1, date: 1, chat: { id: "42", type: "private" } } }] },
+		{ result: [{ update_id: 1, callback_query: { id: "q", from: { id: "7", is_bot: false, first_name: "User" } } }] },
+	])("rejects malformed update identities (%j)", async ({ result }) => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getUpdates({})).rejects.toThrow("Invalid Telegram API getUpdates result");
+	});
+
+	test("rejects invalid JSON and multipart message IDs", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: "1" } });
+		fake.queueResponse({ ok: true, result: {} });
+		fake.queueResponse({ ok: false, description: "Upload rejected" });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+		const upload = { chatId: 1, filePath: import.meta.filename, fileName: "fixture.ts" };
+
+		await expect(transport.sendMessage({ chatId: 1, text: "test" })).rejects.toThrow("Invalid Telegram API sendMessage result");
+		await expect(transport.sendDocument(upload)).rejects.toThrow("Invalid Telegram API sendDocument result");
+		await expect(transport.sendDocument(upload)).rejects.toThrow("Upload rejected");
+	});
+
+	test("accepts a Message result when editing a regular chat message", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: 555, date: 1, chat: { id: 42, type: "private" } } });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.editMessageText({ chatId: 42, messageId: 555, text: "edited" })).resolves.toBeUndefined();
+	});
+
+	test("rejects a false success result for chat actions", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: false });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.sendChatAction({ chatId: 42, action: "typing" })).rejects.toThrow("Invalid Telegram API sendChatAction result");
+	});
+
 	test("Telegram error response with description throws Error", async () => {
 		const fake = new FakeFetch();
 		fake.queueResponse({ ok: false, description: "Bad Request: message text is empty" });
@@ -399,7 +489,7 @@ describe("TelegramTransport", () => {
 		// First call: getFile
 		fake.queueResponse({
 			ok: true,
-			result: { file_id: "file-123", file_path: "documents/file.pdf", file_size: 100 },
+			result: { file_id: "file-123", file_unique_id: "unique-123", file_path: "documents/file.pdf", file_size: 100 },
 		});
 		// Second call: download file bytes
 		fake.queueBinaryResponse(new Uint8Array([0x25, 0x50, 0x44, 0x46])); // %PDF

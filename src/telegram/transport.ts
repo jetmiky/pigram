@@ -1,113 +1,146 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 /**
  * Minimal Telegram user shape.
  */
-export interface TelegramUser {
-	id: number;
-	is_bot: boolean;
-	first_name: string;
-	last_name?: string;
-	username?: string;
-}
+const TelegramUserSchema = Type.Object({
+	id: Type.Integer({ minimum: 1 }),
+	is_bot: Type.Boolean(),
+	first_name: Type.String(),
+	last_name: Type.Optional(Type.String()),
+	username: Type.Optional(Type.String()),
+});
+
+export type TelegramUser = Static<typeof TelegramUserSchema>;
 
 /**
  * Minimal Telegram chat shape.
  */
-export interface TelegramChat {
-	id: number;
-	type: "private" | "group" | "supergroup" | "channel";
-	title?: string;
-	username?: string;
-	first_name?: string;
-	last_name?: string;
-}
+const TelegramChatSchema = Type.Object({
+	id: Type.Integer(),
+	type: Type.Union([Type.Literal("private"), Type.Literal("group"), Type.Literal("supergroup"), Type.Literal("channel")]),
+	title: Type.Optional(Type.String()),
+	username: Type.Optional(Type.String()),
+	first_name: Type.Optional(Type.String()),
+	last_name: Type.Optional(Type.String()),
+});
+
+export type TelegramChat = Static<typeof TelegramChatSchema>;
 
 /**
  * Telegram photo size.
  */
-export interface TelegramPhotoSize {
-	file_id: string;
-	file_unique_id: string;
-	width: number;
-	height: number;
-	file_size?: number;
-}
+const TelegramPhotoSizeSchema = Type.Object({
+	file_id: Type.String(),
+	file_unique_id: Type.String(),
+	width: Type.Integer(),
+	height: Type.Integer(),
+	file_size: Type.Optional(Type.Integer()),
+});
+
+export type TelegramPhotoSize = Static<typeof TelegramPhotoSizeSchema>;
 
 /**
  * Telegram document.
  */
-export interface TelegramDocument {
-	file_id: string;
-	file_unique_id: string;
-	file_name?: string;
-	mime_type?: string;
-	file_size?: number;
-}
+const TelegramDocumentSchema = Type.Object({
+	file_id: Type.String(),
+	file_unique_id: Type.String(),
+	file_name: Type.Optional(Type.String()),
+	mime_type: Type.Optional(Type.String()),
+	file_size: Type.Optional(Type.Integer()),
+});
+
+export type TelegramDocument = Static<typeof TelegramDocumentSchema>;
 
 /**
  * Telegram voice message.
  */
-export interface TelegramVoice {
-	file_id: string;
-	file_unique_id: string;
-	duration: number;
-	mime_type?: string;
-	file_size?: number;
-}
+const TelegramVoiceSchema = Type.Object({
+	file_id: Type.String(),
+	file_unique_id: Type.String(),
+	duration: Type.Integer(),
+	mime_type: Type.Optional(Type.String()),
+	file_size: Type.Optional(Type.Integer()),
+});
+
+export type TelegramVoice = Static<typeof TelegramVoiceSchema>;
 
 /**
  * Telegram message.
  */
-export interface TelegramMessage {
-	message_id: number;
-	from?: TelegramUser;
-	date: number;
-	chat: TelegramChat;
-	text?: string;
-	caption?: string;
-	photo?: TelegramPhotoSize[];
-	document?: TelegramDocument;
-	voice?: TelegramVoice;
-}
+const TelegramMessageSchema = Type.Object({
+	message_id: Type.Integer(),
+	from: Type.Optional(TelegramUserSchema),
+	date: Type.Integer(),
+	chat: TelegramChatSchema,
+	text: Type.Optional(Type.String()),
+	caption: Type.Optional(Type.String()),
+	photo: Type.Optional(Type.Array(TelegramPhotoSizeSchema)),
+	document: Type.Optional(TelegramDocumentSchema),
+	voice: Type.Optional(TelegramVoiceSchema),
+});
+
+export type TelegramMessage = Static<typeof TelegramMessageSchema>;
 
 /**
  * Telegram callback query (from inline keyboard button).
  */
-export interface TelegramCallbackQuery {
-	id: string;
-	from: TelegramUser;
-	message?: TelegramMessage;
-	data?: string;
-}
+const TelegramCallbackQuerySchema = Type.Object({
+	id: Type.String(),
+	from: TelegramUserSchema,
+	message: Type.Optional(TelegramMessageSchema),
+	data: Type.Optional(Type.String()),
+});
+
+export type TelegramCallbackQuery = Static<typeof TelegramCallbackQuerySchema>;
 
 /**
  * Telegram update.
  */
-export interface TelegramUpdate {
-	update_id: number;
-	message?: TelegramMessage;
-	callback_query?: TelegramCallbackQuery;
-}
+const TelegramUpdateSchema = Type.Object({
+	update_id: Type.Integer({ minimum: 0 }),
+	message: Type.Optional(TelegramMessageSchema),
+	callback_query: Type.Optional(TelegramCallbackQuerySchema),
+});
+
+export type TelegramUpdate = Static<typeof TelegramUpdateSchema>;
 
 /**
  * Telegram Bot API response envelope.
  */
-interface TelegramApiResponse<T> {
-	ok: boolean;
-	result?: T;
-	description?: string;
-}
+const TelegramApiResponseSchema = Type.Object({
+	ok: Type.Boolean(),
+	result: Type.Optional(Type.Unknown()),
+	description: Type.Optional(Type.String()),
+});
+
+const TelegramMessageIdSchema = Type.Object({ message_id: Type.Integer() });
+const TelegramEditResultSchema = Type.Union([TelegramMessageIdSchema, Type.Literal(true)]);
 
 /**
  * Result of getFile API call.
  */
-interface TelegramGetFileResult {
-	file_id: string;
-	file_unique_id: string;
-	file_size?: number;
-	file_path?: string;
+const TelegramGetFileResultSchema = Type.Object({
+	file_id: Type.String(),
+	file_unique_id: Type.String(),
+	file_size: Type.Optional(Type.Integer()),
+	file_path: Type.Optional(Type.String()),
+});
+
+async function readTelegramResponse<T extends TSchema>(response: Response, method: string, resultSchema: T): Promise<Static<T>> {
+	const data: unknown = await response.json();
+
+	if (!Value.Check(TelegramApiResponseSchema, data)) throw new Error(`Invalid Telegram API ${method} response`);
+
+	if (!data.ok || data.result === undefined) throw new Error(data.description ?? `Telegram API ${method} failed`);
+
+	if (!Value.Check(resultSchema, data.result)) throw new Error(`Invalid Telegram API ${method} result`);
+
+	return data.result;
 }
 
 /**
@@ -252,11 +285,12 @@ export function createHttpTransport(opts: {
 	/**
 	 * Call a Telegram Bot API method with JSON body.
 	 */
-	async function callTelegram<TResponse>(
+	async function callTelegram<T extends TSchema>(
 		method: string,
 		body: TelegramRequestBody,
+		resultSchema: T,
 		options?: { signal?: AbortSignal },
-	): Promise<TResponse> {
+	): Promise<Static<T>> {
 		const fetchOptions: RequestInit = {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -269,25 +303,19 @@ export function createHttpTransport(opts: {
 
 		const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/${method}`, fetchOptions);
 
-		const data = (await response.json()) as TelegramApiResponse<TResponse>;
-
-		if (!data.ok || data.result === undefined) {
-			throw new Error(data.description ?? `Telegram API ${method} failed`);
-		}
-
-		return data.result;
+		return readTelegramResponse(response, method, resultSchema);
 	}
 
 	/**
 	 * Call a Telegram Bot API method with multipart/form-data body.
 	 */
-	async function callTelegramMultipart<TResponse>(
+	async function callTelegramMultipart(
 		method: string,
 		fields: TelegramFileFields,
 		fileField: string,
 		filePath: string,
 		fileName: string,
-	): Promise<TResponse> {
+	) {
 		const form = new FormData();
 
 		// Add text fields
@@ -304,21 +332,12 @@ export function createHttpTransport(opts: {
 			body: form,
 		});
 
-		const data = (await response.json()) as TelegramApiResponse<TResponse>;
-
-		if (!data.ok || data.result === undefined) {
-			throw new Error(data.description ?? `Telegram API ${method} failed`);
-		}
-
-		return data.result;
+		return readTelegramResponse(response, method, TelegramMessageIdSchema);
 	}
 
 	return {
 		async getMe() {
-			return callTelegram<{ id: number; username?: string; is_bot: boolean; first_name: string }>(
-				"getMe",
-				{},
-			);
+			return callTelegram("getMe", {}, TelegramUserSchema);
 		},
 
 		async getUpdates(opts, signal) {
@@ -347,7 +366,7 @@ export function createHttpTransport(opts: {
 			const deadlineSignal = AbortSignal.timeout(serverTimeoutMs + getUpdatesTimeoutMarginMs);
 			const requestSignal = signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal;
 
-			return callTelegram<TelegramUpdate[]>("getUpdates", body, { signal: requestSignal });
+			return callTelegram("getUpdates", body, Type.Array(TelegramUpdateSchema), { signal: requestSignal });
 		},
 
 		async sendMessage(opts) {
@@ -360,7 +379,7 @@ export function createHttpTransport(opts: {
 
 			if (opts.replyMarkup !== undefined) body.reply_markup = opts.replyMarkup;
 
-			return callTelegram<{ message_id: number }>("sendMessage", body);
+			return callTelegram("sendMessage", body, TelegramMessageIdSchema);
 		},
 
 		async editMessageText(opts) {
@@ -374,22 +393,22 @@ export function createHttpTransport(opts: {
 
 			if (opts.replyMarkup !== undefined) body.reply_markup = opts.replyMarkup;
 
-			await callTelegram<true>("editMessageText", body);
+			await callTelegram("editMessageText", body, TelegramEditResultSchema);
 		},
 
 		async sendRichMessage(opts) {
-			return callTelegram<{ message_id: number }>("sendRichMessage", {
+			return callTelegram("sendRichMessage", {
 				chat_id: opts.chatId,
 				rich_message: { markdown: opts.markdown },
-			});
+			}, TelegramMessageIdSchema);
 		},
 
 		async editMessageRich(opts) {
-			await callTelegram<true>("editMessageText", {
+			await callTelegram("editMessageText", {
 				chat_id: opts.chatId,
 				message_id: opts.messageId,
 				rich_message: { markdown: opts.markdown },
-			});
+			}, TelegramEditResultSchema);
 		},
 
 		async sendChatAction(opts) {
@@ -398,7 +417,7 @@ export function createHttpTransport(opts: {
 				action: opts.action,
 			};
 
-			await callTelegram<true>("sendChatAction", body);
+			await callTelegram("sendChatAction", body, Type.Literal(true));
 		},
 
 		async answerCallbackQuery(opts) {
@@ -408,7 +427,7 @@ export function createHttpTransport(opts: {
 
 			if (opts.text !== undefined) body.text = opts.text;
 
-			await callTelegram<true>("answerCallbackQuery", body);
+			await callTelegram("answerCallbackQuery", body, Type.Literal(true));
 		},
 
 		async sendDocument(opts) {
@@ -418,7 +437,7 @@ export function createHttpTransport(opts: {
 
 			if (opts.caption !== undefined) fields.caption = opts.caption;
 
-			return callTelegramMultipart<{ message_id: number }>(
+			return callTelegramMultipart(
 				"sendDocument",
 				fields,
 				"document",
@@ -434,7 +453,7 @@ export function createHttpTransport(opts: {
 
 			if (opts.caption !== undefined) fields.caption = opts.caption;
 
-			return callTelegramMultipart<{ message_id: number }>(
+			return callTelegramMultipart(
 				"sendPhoto",
 				fields,
 				"photo",
@@ -445,9 +464,9 @@ export function createHttpTransport(opts: {
 
 		async downloadFile(opts) {
 			// Step 1: Get file metadata
-			const file = await callTelegram<TelegramGetFileResult>("getFile", {
+			const file = await callTelegram("getFile", {
 				file_id: opts.fileId,
-			});
+			}, TelegramGetFileResultSchema);
 
 			if (!file.file_path) {
 				throw new Error("Telegram getFile returned no file_path");
