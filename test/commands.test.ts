@@ -5,7 +5,6 @@ import {
 	formatHelpReply,
 	parseCommand,
 	parseGitCommand,
-	type ParsedCommand,
 } from "../src/domain/commands.js";
 
 describe("parseCommand", () => {

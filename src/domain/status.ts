@@ -15,9 +15,13 @@
  */
 export function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
+
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+
 	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+
 	return `${Math.round(count / 1000000)}M`;
 }
 
@@ -77,6 +81,7 @@ function formatContextLine(context: ContextUsage | undefined): string {
 	const tokens = context.tokens !== null ? formatTokens(context.tokens) : "?";
 	const window = formatTokens(context.contextWindow);
 	const percent = context.percent !== null ? ` (${Math.round(context.percent)}%)` : "";
+
 	return `- Context: ${tokens} / ${window}${percent}`;
 }
 
@@ -104,6 +109,7 @@ export function formatSessionStatus(view: SessionStatusView): string {
 		`- Mode: ${formatMode(view.mode)}`,
 		`- Loaded Config: ${code(view.configPath)}`,
 	];
+
 	return lines.join("\n");
 }
 
@@ -122,5 +128,6 @@ export interface FooterStatusView {
  */
 export function formatFooterStatus(view: FooterStatusView): string {
 	const handle = view.botUsername ? `@${view.botUsername}` : "Telegram";
+
 	return `📱 ${handle} · ${formatMode(view.mode)} · ${view.configPath}`;
 }

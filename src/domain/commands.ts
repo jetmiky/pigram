@@ -124,15 +124,19 @@ export function parseGitCommand(tokens: string[]): GitCommand {
 
 		case "nb": {
 			const branchName = tokens[2];
+
 			if (!branchName) {
 				return { ok: false, message: "usage: /git nb <branch-name>" };
 			}
+
 			if (tokens[3]) {
 				return { ok: false, message: "usage: /git nb <branch-name>" };
 			}
+
 			if (branchName.startsWith("-")) {
 				return { ok: false, message: "branch name cannot start with a dash" };
 			}
+
 			return { ok: true, kind: "nb", branchName };
 		}
 
@@ -169,6 +173,7 @@ export function parseCommand(text: string): ParsedCommand | null {
 	switch (command) {
 		case "/new": {
 			const name = tokens[1];
+
 			return name ? { kind: "new", name } : { kind: "new" };
 		}
 
@@ -177,18 +182,23 @@ export function parseCommand(text: string): ParsedCommand | null {
 
 		case "/model": {
 			const model = tokens[1];
+
 			if (!model) {
 				return { kind: "unknown" };
 			}
+
 			const thinking = tokens[2];
+
 			return thinking ? { kind: "model", model, thinking } : { kind: "model", model };
 		}
 
 		case "/thinking": {
 			const level = tokens[1];
+
 			if (!level) {
 				return { kind: "unknown" };
 			}
+
 			return { kind: "thinking", level };
 		}
 
@@ -209,6 +219,7 @@ export function parseCommand(text: string): ParsedCommand | null {
 
 		case "/git": {
 			const git = parseGitCommand(tokens);
+
 			return { kind: "git", git };
 		}
 

@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { access, readFile } from "node:fs/promises";
 import type { PigramConfig } from "./schema.js";
 import type { PigramState, ResolvedPaths, Scope } from "./store.js";
@@ -10,19 +12,22 @@ export type MigrationResult =
   | { status: "no-legacy" }
   | { status: "error"; message: string };
 
-interface LegacyConfig {
-  botToken?: string;
-  botUsername?: string;
-  botId?: number;
-  allowedUserId?: number;
-  lastUpdateId?: number;
-  streamPreviews?: boolean;
-  richText?: boolean;
-}
+const LegacyConfigSchema = Type.Object({
+  botToken: Type.Optional(Type.String()),
+  botUsername: Type.Optional(Type.String()),
+  botId: Type.Optional(Type.Integer({ minimum: 1 })),
+  allowedUserId: Type.Optional(Type.Integer({ minimum: 1 })),
+  lastUpdateId: Type.Optional(Type.Integer({ minimum: 0 })),
+  streamPreviews: Type.Optional(Type.Boolean()),
+  richText: Type.Optional(Type.Boolean()),
+});
+
+type LegacyConfig = Static<typeof LegacyConfigSchema>;
 
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
+
     return true;
   } catch {
     return false;
@@ -45,7 +50,7 @@ export function legacyPaths(opts: {
   cwd: string;
   homeDir: string;
   scope: Scope;
-}): { legacyConfigPath: string } {
+}) {
   return {
     legacyConfigPath: getLegacyPath(opts),
   };
@@ -78,6 +83,7 @@ export async function migrateLegacyConfig(opts: {
 
   // Read and parse legacy file
   let legacyContent: string;
+
   try {
     legacyContent = await readFile(legacyPath, "utf8");
   } catch (err) {
@@ -88,8 +94,12 @@ export async function migrateLegacyConfig(opts: {
   }
 
   let legacy: LegacyConfig;
+
   try {
-    legacy = JSON.parse(legacyContent) as LegacyConfig;
+    const parsed: unknown = JSON.parse(legacyContent);
+
+    if (!Value.Check(LegacyConfigSchema, parsed)) throw new Error("Invalid legacy config fields");
+    legacy = parsed;
   } catch (err) {
     return {
       status: "error",
@@ -123,9 +133,11 @@ export async function migrateLegacyConfig(opts: {
   if (legacy.allowedUserId !== undefined) {
     newState.pairedUserId = legacy.allowedUserId;
   }
+
   if (legacy.botId !== undefined) {
     newState.botId = legacy.botId;
   }
+
   if (legacy.botUsername !== undefined) {
     newState.botUsername = legacy.botUsername;
   }

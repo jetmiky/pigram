@@ -1,6 +1,8 @@
 import { describe, test, expect, mock } from "bun:test";
-import type { TelegramUpdate } from "../src/telegram/transport.js";
-import { TelegramPoller, type UpdateHandler, type PollerDeps } from "../src/telegram/poller.js";
+import type { TelegramTransport, TelegramUpdate } from "../src/telegram/transport.js";
+import { TelegramPoller, type PollerDeps, type UpdateHandler } from "../src/telegram/poller.js";
+
+type GetUpdatesOptions = Parameters<TelegramTransport["getUpdates"]>[0];
 
 // Helper to yield control to event loop
 const yield_tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -18,7 +20,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop to allow abort signal to propagate
 				await yield_tick();
 				
@@ -45,12 +47,14 @@ describe("TelegramPoller", () => {
 		});
 
 		const getCursor = () => cursor;
+
 		const setCursor = mock(async (updateId: number) => {
 			setCursorCalls.push(updateId);
 			cursor = updateId;
 		});
 
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -83,19 +87,22 @@ describe("TelegramPoller", () => {
 		const updates: TelegramUpdate[] = [
 			{ update_id: 200, message: { message_id: 1, date: 1, chat: { id: 1, type: "private" } } },
 		];
+
 		let cursor = 199;
 		let callCount = 0;
 		const sequence: string[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
 				callCount++;
+
 				if (signal?.aborted) {
 					const err = new Error("The operation was aborted");
 					err.name = "AbortError";
 					throw err;
 				}
+
 				return callCount === 1 ? updates : [];
 			}),
 		};
@@ -103,7 +110,9 @@ describe("TelegramPoller", () => {
 		const handler: UpdateHandler = mock(async (update: TelegramUpdate) => {
 			sequence.push(`handler:${update.update_id}`);
 		});
+
 		const getCursor = () => cursor;
+
 		const setCursor = mock(async (updateId: number) => {
 			sequence.push(`setCursor:${updateId}`);
 			cursor = updateId;
@@ -137,12 +146,12 @@ describe("TelegramPoller", () => {
 
 				// First call: return one update
 				if (getUpdatesCalls.length === 1) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Second call: return another update
 				if (getUpdatesCalls.length === 2) {
-					return [{ update_id: 101 }] as TelegramUpdate[];
+					return [{ update_id: 101 }];
 				}
 
 				// Third call and onwards: return empty to avoid infinite loop
@@ -153,11 +162,13 @@ describe("TelegramPoller", () => {
 		const handler: UpdateHandler = mock(async () => {});
 
 		const getCursor = () => cursor;
+
 		const setCursor = mock(async (updateId: number) => {
 			cursor = updateId;
 		});
 
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -185,7 +196,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop
 				await yield_tick();
 				
@@ -200,7 +211,7 @@ describe("TelegramPoller", () => {
 
 				// First call: return one update
 				if (callCount === 1) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Subsequent calls: return empty
@@ -211,11 +222,13 @@ describe("TelegramPoller", () => {
 		let cursor = 99;
 		const handler: UpdateHandler = mock(async () => {});
 		const getCursor = () => cursor;
+
 		const setCursor = mock(async (updateId: number) => {
 			cursor = updateId;
 		});
 
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -236,7 +249,7 @@ describe("TelegramPoller", () => {
 
 	test("AbortError from getUpdates exits cleanly", async () => {
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions) => {
 				// Simulate an abort error
 				const err = new Error("The operation was aborted");
 				err.name = "AbortError";
@@ -274,7 +287,7 @@ describe("TelegramPoller", () => {
 		const errors: unknown[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop
 				await yield_tick();
 				
@@ -294,7 +307,7 @@ describe("TelegramPoller", () => {
 
 				// Second call: return an update
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Subsequent calls: return empty
@@ -305,15 +318,17 @@ describe("TelegramPoller", () => {
 		let cursor = 99;
 		const handler: UpdateHandler = mock(async () => {});
 		const getCursor = () => cursor;
+
 		const setCursor = mock(async (updateId: number) => {
 			cursor = updateId;
 		});
 
-		const onError = mock((err: unknown) => {
+		const onError = mock<NonNullable<PollerDeps["onError"]>>((err) => {
 			errors.push(err);
 		});
 
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -331,7 +346,7 @@ describe("TelegramPoller", () => {
 		// onError should have been called once with the network error
 		expect(onError).toHaveBeenCalledTimes(1);
 		expect(errors.length).toBe(1);
-		expect((errors[0] as Error).message).toBe("Network failure");
+		expect(errors[0]).toEqual(new Error("Network failure"));
 
 		// Handler should have been called once (for update 100)
 		expect(handler).toHaveBeenCalledTimes(1);
@@ -345,18 +360,22 @@ describe("TelegramPoller", () => {
 		// cause, so the loop returned and the bridge went silent while the
 		// lock heartbeat kept beating. Only a set signal may end the loop.
 		let callCount = 0;
+
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions) => {
 				await yield_tick();
 				callCount++;
+
 				if (callCount === 1) {
 					const err = new Error("other side closed / aborted unexpectedly");
 					err.name = "TypeError";
 					throw err;
 				}
+
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
+
 				return [];
 			}),
 		};
@@ -365,6 +384,7 @@ describe("TelegramPoller", () => {
 		const handler: UpdateHandler = mock(async () => {});
 		const onError = mock(() => {});
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -383,6 +403,40 @@ describe("TelegramPoller", () => {
 		expect(handler).toHaveBeenCalledTimes(1); // update 100 still delivered
 	});
 
+	test.each([
+		["Conflict: terminated by other getUpdates request"],
+		[{ message: "Conflict: terminated by other getUpdates request" }],
+		[undefined],
+	])(
+		"reports a non-Error cause unchanged without classifying it as a conflict (%j)",
+		async (cause) => {
+			let calls = 0;
+			const controller = new AbortController();
+			const onError = mock<NonNullable<PollerDeps["onError"]>>(() => {});
+
+			const poller = new TelegramPoller({
+				transport: {
+					async getUpdates() {
+						if (++calls === 1) throw cause;
+
+						return [{ update_id: 1 }];
+					},
+				},
+				handler: async () => { controller.abort(); },
+				getCursor: () => 0,
+				setCursor: async () => {},
+				onError,
+				conflictDelayMs: 10_000,
+			});
+
+			await poller.start(controller.signal);
+
+			expect(onError).toHaveBeenCalledTimes(1);
+			expect(onError.mock.calls[0]?.[0]).toBe(cause);
+			expect(calls).toBe(2);
+		},
+	);
+
 	test("a throwing onError handler does NOT kill the loop", async () => {
 		// Regression (silent poller death, path B): the composition root wires
 		// onError to ctx.ui.setStatus, which can throw on a stale context.
@@ -390,21 +444,26 @@ describe("TelegramPoller", () => {
 		// while-loop and polling died permanently with no signal at all —
 		// exactly the frozen-cursor + live-heartbeat production signature.
 		let callCount = 0;
+
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
 				callCount++;
+
 				if (signal?.aborted) {
 					const err = new Error("The operation was aborted");
 					err.name = "AbortError";
 					throw err;
 				}
+
 				if (callCount === 1) {
 					throw new Error("Network failure");
 				}
+
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
+
 				return [];
 			}),
 		};
@@ -412,6 +471,7 @@ describe("TelegramPoller", () => {
 		let cursor = 99;
 		const handler: UpdateHandler = mock(async () => {});
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -437,21 +497,25 @@ describe("TelegramPoller", () => {
 		const callTimes: number[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
+
 				if (signal?.aborted) {
 					const err = new Error("The operation was aborted");
 					err.name = "AbortError";
 					throw err;
 				}
+
 				callTimes.push(Date.now());
 				callCount++;
+
 				// First call throws the Telegram 409 conflict.
 				if (callCount === 1) {
 					throw new Error("Conflict: terminated by other getUpdates request");
 				}
+
 				// Subsequent calls idle.
-				return [] as TelegramUpdate[];
+				return [];
 			}),
 		};
 
@@ -462,6 +526,7 @@ describe("TelegramPoller", () => {
 		const onError = mock(() => {});
 
 		const controller = new AbortController();
+
 		const poller = new TelegramPoller({
 			transport,
 			handler,
@@ -491,21 +556,28 @@ describe("TelegramPoller", () => {
 		]) {
 			const times: number[] = [];
 			let n = 0;
+
 			const transport = {
-				getUpdates: mock(async (_o: unknown, signal?: AbortSignal) => {
+				getUpdates: mock(async (_o: GetUpdatesOptions, signal?: AbortSignal) => {
 					await yield_tick();
+
 					if (signal?.aborted) {
 						const e = new Error("aborted");
 						e.name = "AbortError";
 						throw e;
 					}
+
 					times.push(Date.now());
+
 					if (++n === 1) throw new Error(message);
-					return [] as TelegramUpdate[];
+
+					return [];
 				}),
 			};
+
 			let cursor = 0;
 			const controller = new AbortController();
+
 			const poller = new TelegramPoller({
 				transport,
 				handler: mock(async () => {}),
@@ -514,6 +586,7 @@ describe("TelegramPoller", () => {
 				errorDelayMs: 0,
 				conflictDelayMs: 100,
 			});
+
 			setTimeout(() => controller.abort(), 350);
 			await poller.start(controller.signal);
 			expect(times.length).toBeGreaterThanOrEqual(2);

@@ -23,6 +23,7 @@ import { containsGfmTable, isPermanentRichError } from "./rich.js";
 import { stripReasoningTags } from "../pi/assistant-text.js";
 
 const DEFAULT_THROTTLE_MS = 750;
+
 /** Cap streamed previews under Telegram's 4096 hard limit, leaving room for "…". */
 const PREVIEW_MAX = 4000;
 
@@ -49,6 +50,7 @@ export interface PreviewTimer {
 
 function realTimer(): PreviewTimer {
 	let handle: ReturnType<typeof setTimeout> | undefined;
+
 	return {
 		set(fn, ms) {
 			if (handle) clearTimeout(handle);
@@ -83,6 +85,7 @@ export interface PreviewSessionDeps {
 /** Trim and truncate preview text to a safe single-message length. */
 function clip(text: string, max = PREVIEW_MAX): string {
 	const trimmed = text.trim();
+
 	return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
 }
 
@@ -133,10 +136,12 @@ export class PreviewSession {
 	async update(rawPartial: string): Promise<void> {
 		if (this.finalized || !this.streamPreviews) return;
 		const text = clip(stripReasoningTags(rawPartial));
+
 		if (!text || text === this.lastSent) return;
 		this.pending = text;
 
 		const elapsed = this.now() - this.lastFlushAt;
+
 		if (elapsed >= this.throttleMs) {
 			await this.flush();
 		} else {
@@ -148,9 +153,11 @@ export class PreviewSession {
 	private async flush(): Promise<void> {
 		if (this.finalized) return;
 		const text = this.pending;
+
 		if (text === undefined || text === this.lastSent) return;
 		this.lastSent = text;
 		this.lastFlushAt = this.now();
+
 		try {
 			if (this.messageId === undefined) {
 				const result = await this.transport.sendMessage({ chatId: this.chatId, text });
@@ -186,18 +193,22 @@ export class PreviewSession {
 		this.timer.clear();
 
 		const stripped = stripReasoningTags(markdown);
+
 		if (!stripped) return; // nothing to show (e.g. a pure tool turn)
 
 		if (this.richTables && !this.richDisabled && containsGfmTable(stripped)) {
 			const delivered = await this.tryRichFinalize(stripped);
+
 			if (delivered) return;
 		}
 
 		const chunks = chunkTelegramHtml(markdownToTelegramHtml(stripped));
+
 		if (chunks.length === 0) return;
 
 		if (this.messageId !== undefined) {
 			await this.editRich(this.messageId, chunks[0]!);
+
 			for (let i = 1; i < chunks.length; i++) {
 				await this.sendRich(chunks[i]!);
 			}
@@ -218,15 +229,20 @@ export class PreviewSession {
 		try {
 			if (this.messageId !== undefined && this.transport.editMessageRich) {
 				await this.transport.editMessageRich({ chatId: this.chatId, messageId: this.messageId, markdown });
+
 				return true;
 			}
+
 			if (this.transport.sendRichMessage) {
 				await this.transport.sendRichMessage({ chatId: this.chatId, markdown });
+
 				return true;
 			}
+
 			return false; // transport has no rich support at all
 		} catch (error) {
-			if (isPermanentRichError(error)) this.richDisabled = true;
+			if (error instanceof Error && isPermanentRichError(error)) this.richDisabled = true;
+
 			return false;
 		}
 	}

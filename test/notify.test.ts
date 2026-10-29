@@ -34,12 +34,14 @@ describe("parseNotifyArgs", () => {
 	test("rejects unknown arguments with a usage message", () => {
 		const bad = parseNotifyArgs("maybe");
 		expect(bad.ok).toBe(false);
+
 		if (!bad.ok) expect(bad.message).toBe(NOTIFY_USAGE_MESSAGE);
 	});
 
 	test("rejects extra arguments", () => {
 		const bad = parseNotifyArgs("on now");
 		expect(bad.ok).toBe(false);
+
 		if (!bad.ok) expect(bad.message).toBe(NOTIFY_USAGE_MESSAGE);
 	});
 });

@@ -55,11 +55,13 @@ export function sumAssistantUsage(
 ): TokenUsage {
 	let input = 0;
 	let output = 0;
+
 	for (const entry of entries) {
 		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
 		input += entry.message.usage?.input ?? 0;
 		output += entry.message.usage?.output ?? 0;
 	}
+
 	return { input, output };
 }
 
@@ -84,7 +86,7 @@ export interface PiSessionDriver {
 		readonly model?: { id: string; provider?: string };
 		readonly isProcessing?: boolean;
 		setModel(modelId: string): Promise<void>;
-		compact(): Promise<unknown>;
+		compact(): Promise<void>;
 		abort(): Promise<void>;
 		prompt(text: string, options?: { images?: string[] }): Promise<void>;
 	};
@@ -99,12 +101,17 @@ export function createAgentSession(driver: PiSessionDriver): AgentSessionPort {
 	return {
 		getStatus(): SessionStatus {
 			const model = driver.session.model;
-			return {
-				...(model?.id ? { modelId: model.id } : {}),
-				...(model?.provider ? { provider: model.provider } : {}),
+
+			const status: SessionStatus = {
 				thinkingLevel: driver.getThinkingLevel(),
 				busy: driver.session.isProcessing ?? false,
 			};
+
+			if (model?.id) status.modelId = model.id;
+
+			if (model?.provider) status.provider = model.provider;
+
+			return status;
 		},
 
 		async setModel(modelId: string): Promise<void> {

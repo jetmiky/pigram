@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentSessionPort, PiSessionDriver, ThinkingLevel } from "../src/pi/session";
+import type { PiSessionDriver, ThinkingLevel } from "../src/pi/session";
 import { createAgentSession, sumAssistantUsage } from "../src/pi/session";
 
 interface FakeSessionState {
@@ -29,7 +29,6 @@ function createFakeDriver(state: FakeSessionState): PiSessionDriver {
 			},
 			compact: async () => {
 				state.calls.push({ method: "session.compact", args: [] });
-				return { success: true };
 			},
 			abort: async () => {
 				state.calls.push({ method: "session.abort", args: [] });
@@ -49,6 +48,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -67,15 +67,42 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "off",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
 		const status = session.getStatus();
 
-		expect(status.modelId).toBeUndefined();
-		expect(status.provider).toBeUndefined();
+		expect(status).not.toHaveProperty("modelId");
+		expect(status).not.toHaveProperty("provider");
 		expect(status.thinkingLevel).toBe("off");
 		expect(status.busy).toBe(false);
+	});
+
+	test("getStatus omits empty model fields", () => {
+		const state: FakeSessionState = {
+			model: { id: "", provider: "" },
+			isProcessing: false,
+			thinkingLevel: "off",
+			calls: [],
+		};
+
+		const session = createAgentSession(createFakeDriver(state));
+
+		expect(session.getStatus()).toStrictEqual({ thinkingLevel: "off", busy: false });
+	});
+
+	test("getStatus includes a model ID without adding an absent provider", () => {
+		const state: FakeSessionState = {
+			model: { id: "model-id" },
+			isProcessing: false,
+			thinkingLevel: "off",
+			calls: [],
+		};
+
+		const session = createAgentSession(createFakeDriver(state));
+
+		expect(session.getStatus()).toStrictEqual({ modelId: "model-id", thinkingLevel: "off", busy: false });
 	});
 
 	test("getStatus defaults isProcessing to false when undefined", () => {
@@ -85,6 +112,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		// Simulate isProcessing being undefined
 		Object.defineProperty(driver.session, "isProcessing", {
@@ -103,6 +131,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "minimal",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -119,6 +148,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -136,6 +166,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "minimal",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -152,6 +183,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -168,6 +200,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -184,6 +217,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "low",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -200,6 +234,7 @@ describe("AgentSession adapter", () => {
 			thinkingLevel: "medium",
 			calls: [],
 		};
+
 		const driver = createFakeDriver(state);
 		const session = createAgentSession(driver);
 
@@ -224,6 +259,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "message", message: { role: "assistant", usage: { input: 100, output: 10 } } },
 			{ type: "message", message: { role: "assistant", usage: { input: 250, output: 25 } } },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 350, output: 35 });
 	});
 
@@ -234,6 +270,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "model_change", provider: "anthropic", modelId: "claude" },
 			{ type: "session_info", name: "my-session" },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 100, output: 10 });
 	});
 
@@ -242,6 +279,7 @@ describe("sumAssistantUsage", () => {
 			{ type: "message", message: { role: "assistant" } },
 			{ type: "message", message: { role: "assistant", usage: { input: 5 } } },
 		];
+
 		expect(sumAssistantUsage(entries)).toEqual({ input: 5, output: 0 });
 	});
 });

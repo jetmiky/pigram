@@ -39,7 +39,9 @@ export type InboundTextRoute = "command" | "dialog_answer" | "prompt";
  */
 export function routeInboundText(text: string, hasPendingTextDialog: boolean): InboundTextRoute {
 	if (parseCommand(text)) return "command";
+
 	if (hasPendingTextDialog) return "dialog_answer";
+
 	return "prompt";
 }
 
@@ -55,10 +57,12 @@ export function mapInboundMessage(msg: InboundMessage): MappedPrompt {
   const documentPaths = msg.documentPaths ?? [];
 
   let text: string;
+
   if (msg.text !== undefined) {
     text = TELEGRAM_PREFIX + msg.text;
   } else {
     const totalFiles = imagePaths.length + documentPaths.length;
+
     if (totalFiles > 0) {
       text = `${TELEGRAM_PREFIX}(sent ${totalFiles} file(s))`;
     } else {

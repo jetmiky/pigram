@@ -8,13 +8,25 @@
  * @see docs/adr/0004-poller-lock.md
  */
 import { writeFile, readFile, unlink } from "node:fs/promises";
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 /** Shape of the lock file on disk. */
-export interface LockInfo {
-  pid: number;
-  tokenHash: string;
-  startedAt: string;
-  heartbeat: string;
+const LockInfoSchema = Type.Object({
+  pid: Type.Integer({ minimum: 1 }),
+  tokenHash: Type.String(),
+  startedAt: Type.String(),
+  heartbeat: Type.String(),
+});
+
+export type LockInfo = Static<typeof LockInfoSchema>;
+
+async function readLockInfo(lockPath: string): Promise<LockInfo> {
+  const lock: unknown = JSON.parse(await readFile(lockPath, "utf8"));
+
+  if (!Value.Check(LockInfoSchema, lock)) throw new Error("Invalid poller lock");
+
+  return lock;
 }
 
 /** Result of a lock acquisition attempt. */
@@ -31,6 +43,7 @@ export type LockResult =
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
@@ -53,6 +66,7 @@ export async function tryAcquireLock(
   tokenHash: string,
 ): Promise<LockResult> {
   const now = new Date().toISOString();
+
   const payload: LockInfo = {
     pid: process.pid,
     tokenHash,
@@ -62,20 +76,23 @@ export async function tryAcquireLock(
 
   try {
     await writeFile(lockPath, JSON.stringify(payload), { flag: "wx" });
+
     return { acquired: true };
   } catch (err: unknown) {
     // EEXIST means another instance wrote first — check who holds it.
-    if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (!(err instanceof Error) || !("code" in err) || err.code !== "EEXIST") {
       throw err;
     }
 
     let existing: LockInfo;
+
     try {
-      existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      existing = await readLockInfo(lockPath);
     } catch {
       // Lock file unreadable (corrupt, partial write) — steal it.
       await writeFile(lockPath, JSON.stringify(payload));
-      const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      const verify = await readLockInfo(lockPath);
+
       return verify.pid === process.pid
         ? { acquired: true }
         : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -89,7 +106,8 @@ export async function tryAcquireLock(
     // Different token hash = different bot, no conflict.
     if (existing.tokenHash !== tokenHash) {
       await writeFile(lockPath, JSON.stringify(payload));
-      const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      const verify = await readLockInfo(lockPath);
+
       return verify.pid === process.pid
         ? { acquired: true }
         : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -102,7 +120,8 @@ export async function tryAcquireLock(
 
     // Same bot, holder PID dead → steal.
     await writeFile(lockPath, JSON.stringify(payload));
-    const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+    const verify = await readLockInfo(lockPath);
+
     return verify.pid === process.pid
       ? { acquired: true }
       : { acquired: false, holderPid: verify.pid, holderSince: verify.startedAt };
@@ -123,7 +142,8 @@ export async function releaseLock(lockPath: string): Promise<void> {
  */
 export async function touchHeartbeat(lockPath: string): Promise<void> {
   try {
-    const existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+    const existing = await readLockInfo(lockPath);
+
     if (existing.pid === process.pid) {
       existing.heartbeat = new Date().toISOString();
       await writeFile(lockPath, JSON.stringify(existing));
@@ -144,9 +164,7 @@ export function startHeartbeat(lockPath: string, intervalMs = 10_000): () => voi
   }, intervalMs);
 
   // Don't keep the process alive just for heartbeat.
-  if (typeof timer === "object" && "unref" in timer) {
-    timer.unref();
-  }
+  timer.unref();
 
   return () => clearInterval(timer);
 }

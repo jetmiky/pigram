@@ -17,6 +17,10 @@ describe("markdownToTelegramHtml — lists", () => {
 		expect(html).toBe("3. third\n4. fourth");
 	});
 
+	test("normalizes a zero ordered-list start to one", () => {
+		expect(markdownToTelegramHtml("0. first\n1. second")).toBe("1. first\n2. second");
+	});
+
 	// Regression: a list item holding a nested list used to crash the whole
 	// converter with "Token with 'list' type was not found", taking the entire
 	// reply down with it (finalize() calls the converter outside try/catch).
@@ -77,6 +81,10 @@ describe("markdownToTelegramHtml — lists", () => {
 		expect(html).toBe("• item\n<b>bold</b> quote");
 	});
 
+	test("escapes code text inside a quoted list item", () => {
+		expect(markdownToTelegramHtml("- item\n  > ```\n  > <tag>\n  > ```")).toBe("• item\n&lt;tag&gt;");
+	});
+
 	test("renders a nested blockquote inside a list item", () => {
 		const html = markdownToTelegramHtml("- item\n  > outer\n  >> inner");
 		expect(html).toContain("outer");
@@ -104,6 +112,7 @@ describe("chunkTelegramHtml", () => {
 		const html = "<b>" + "x".repeat(5000) + "</b>";
 		const chunks = chunkTelegramHtml(html);
 		expect(allUnder(chunks, 4096)).toBe(true);
+
 		// Each chunk should be valid HTML with balanced tags
 		for (const chunk of chunks) {
 			expect(chunk).toContain("<b>");
@@ -232,6 +241,20 @@ describe("markdownToTelegramHtml — raw HTML sanitization", () => {
 	test("does not touch HTML inside inline code", () => {
 		const result = markdownToTelegramHtml("`<br>` is a line break");
 		expect(result).toContain("<code>&lt;br&gt;</code>");
+	});
+
+	test("restores mixed code placeholders including multi-digit indices", () => {
+		const inline = Array.from({ length: 12 }, (_, index) => `\`<tag-${index}>\``).join(" ");
+		const html = markdownToTelegramHtml(`<b>before</b><br>${inline}\n\n\`\`\`\n<b>fenced</b>\n\`\`\`\n\n<i>after</i>`);
+
+		for (let index = 0; index < 12; index++) {
+			expect(html).toContain(`<code>&lt;tag-${index}&gt;</code>`);
+		}
+
+		expect(html).toContain("&lt;b&gt;fenced&lt;/b&gt;");
+		expect(html).toContain("<b>before</b>");
+		expect(html).toContain("<i>after</i>");
+		expect(html).not.toContain("\0");
 	});
 
 	test("strips unsupported tags like <div>, <span>, <p>", () => {

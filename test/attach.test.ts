@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type Attachment,
   type AttachmentSender,
   AttachmentQueue,
   MAX_ATTACHMENTS_PER_TURN,
@@ -74,6 +73,7 @@ describe("AttachmentQueue", () => {
     for (let i = 0; i < MAX_ATTACHMENTS_PER_TURN; i++) {
       queue.add(`/tmp/file${i}.txt`);
     }
+
     expect(queue.size).toBe(MAX_ATTACHMENTS_PER_TURN);
 
     // Attempt to add one more
@@ -103,6 +103,7 @@ describe("AttachmentQueue", () => {
     for (let i = 0; i < 8; i++) {
       queue.add(`/tmp/file${i}.txt`);
     }
+
     expect(queue.size).toBe(8);
 
     // Attempt to add 3 more (would exceed MAX of 10)
@@ -120,6 +121,7 @@ describe("AttachmentQueue", () => {
       { length: MAX_ATTACHMENTS_PER_TURN },
       (_, i) => `/tmp/file${i}.txt`
     );
+
     const added = queue.addMany(paths);
 
     expect(added).toHaveLength(MAX_ATTACHMENTS_PER_TURN);
@@ -144,6 +146,7 @@ describe("flushAttachments", () => {
     const mockSender: AttachmentSender = {
       sendDocument: async (opts) => {
         calls.push(opts);
+
         return { message_id: 123 };
       },
     };
@@ -204,7 +207,7 @@ describe("executeAttach", () => {
   test("queues valid files and returns added list", async () => {
     const queue = new AttachmentQueue();
 
-    const fakeStatFile = async (path: string) => {
+    const fakeStatFile = async () => {
       return {
         isFile: () => true,
       };
@@ -247,6 +250,7 @@ describe("executeAttach", () => {
 
     const fakeStatFile = async (path: string) => {
       checkedPaths.push(path);
+
       return {
         isFile: () => true,
       };
@@ -264,7 +268,7 @@ describe("executeAttach", () => {
   test("propagates file system errors from statFile", async () => {
     const queue = new AttachmentQueue();
 
-    const fakeStatFile = async (path: string) => {
+    const fakeStatFile = async () => {
       throw new Error("ENOENT: no such file");
     };
 

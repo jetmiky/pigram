@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   migrateLegacyConfig,
   legacyPaths,
-  type MigrationResult,
 } from "../src/config/migrate.js";
 import { readConfig, readState } from "../src/config/store.js";
 
@@ -16,6 +15,7 @@ describe("legacyPaths", () => {
       homeDir: "/home/user",
       scope: "project",
     });
+
     expect(result.legacyConfigPath).toBe("/proj/.pi/telegram.json");
   });
 
@@ -25,6 +25,7 @@ describe("legacyPaths", () => {
       homeDir: "/home/user",
       scope: "global",
     });
+
     expect(result.legacyConfigPath).toBe("/home/user/.pi/agent/telegram.json");
   });
 });
@@ -62,9 +63,11 @@ describe("migrateLegacyConfig", () => {
 
       // Verify no pigram.json or state.json created
       const configExists = await fileExists(join(cwd, ".pi", "pigram.json"));
+
       const stateExists = await fileExists(
         join(cwd, ".pi", "tmp", "pigram", "state.json")
       );
+
       expect(configExists).toBe(false);
       expect(stateExists).toBe(false);
     });
@@ -96,6 +99,7 @@ describe("migrateLegacyConfig", () => {
       });
 
       expect(result.status).toBe("migrated");
+
       if (result.status === "migrated") {
         expect(result.configPath).toBe(join(cwd, ".pi", "pigram.json"));
         expect(result.statePath).toBe(
@@ -180,6 +184,7 @@ describe("migrateLegacyConfig", () => {
     it("leaves legacy file unchanged", async () => {
       const legacyPath = join(cwd, ".pi", "telegram.json");
       await mkdir(join(cwd, ".pi"), { recursive: true });
+
       const legacyContent = JSON.stringify({
         botToken: "test-token-123",
         botUsername: "test_bot",
@@ -189,6 +194,7 @@ describe("migrateLegacyConfig", () => {
         streamPreviews: false,
         richText: false,
       });
+
       await writeFile(legacyPath, legacyContent, "utf8");
 
       await migrateLegacyConfig({ cwd, homeDir, scope: "project" });
@@ -305,10 +311,12 @@ describe("migrateLegacyConfig", () => {
         JSON.stringify({ botToken: "legacy-token" }),
         "utf8"
       );
+
       const existingConfig = JSON.stringify({
         botToken: "existing-token",
         ux: { richText: true, streamPreviews: true },
       });
+
       await writeFile(newConfigPath, existingConfig, "utf8");
 
       await migrateLegacyConfig({ cwd, homeDir, scope: "project" });
@@ -338,6 +346,7 @@ describe("migrateLegacyConfig", () => {
       });
 
       expect(result.status).toBe("error");
+
       if (result.status === "error") {
         expect(result.message).toContain("botToken");
       }
@@ -358,12 +367,38 @@ describe("migrateLegacyConfig", () => {
       await migrateLegacyConfig({ cwd, homeDir, scope: "project" });
 
       const configExists = await fileExists(join(cwd, ".pi", "pigram.json"));
+
       const stateExists = await fileExists(
         join(cwd, ".pi", "tmp", "pigram", "state.json")
       );
+
       expect(configExists).toBe(false);
       expect(stateExists).toBe(false);
     });
+  });
+
+  it.each([
+    [null],
+    [[]],
+    [{ botToken: 123 }],
+    [{ botToken: "token", richText: "yes" }],
+    [{ botToken: "token", streamPreviews: 1 }],
+    [{ botToken: "token", allowedUserId: "123" }],
+    [{ botToken: "token", lastUpdateId: -1 }],
+    [{ botToken: "token", botId: false }],
+    [{ botToken: "token", botUsername: 123 }],
+  ])("rejects malformed legacy fields without writing files (%j)", async (legacy) => {
+    const legacyPath = join(cwd, ".pi", "telegram.json");
+    const content = JSON.stringify(legacy);
+    await mkdir(join(cwd, ".pi"), { recursive: true });
+    await writeFile(legacyPath, content);
+
+    const result = await migrateLegacyConfig({ cwd, homeDir, scope: "project" });
+
+    expect(result.status).toBe("error");
+    expect(await readFile(legacyPath, "utf8")).toBe(content);
+    expect(await fileExists(join(cwd, ".pi", "pigram.json"))).toBe(false);
+    expect(await fileExists(join(cwd, ".pi", "tmp", "pigram", "state.json"))).toBe(false);
   });
 
   describe("global scope migration", () => {
@@ -383,6 +418,7 @@ describe("migrateLegacyConfig", () => {
       });
 
       expect(result.status).toBe("migrated");
+
       if (result.status === "migrated") {
         expect(result.configPath).toBe(
           join(homeDir, ".pi", "agent", "pigram.json")
@@ -398,6 +434,7 @@ describe("migrateLegacyConfig", () => {
 async function fileExists(path: string): Promise<boolean> {
   try {
     await readFile(path);
+
     return true;
   } catch {
     return false;

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import pigram from "../src/index.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { telegramAskParameters } from "../src/telegram/ask.js";
 
 /**
  * Fake pi ExtensionAPI that captures registrations instead of executing them.
@@ -9,22 +10,27 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
  * the real production entrypoint without a live pi session.
  */
 function makeFakePi() {
-	const registeredTools: Array<Record<string, unknown>> = [];
-	const registeredCommands: Array<{ name: string; def: Record<string, unknown> }> = [];
-	const events = new Map<string, Array<(...args: never[]) => unknown>>();
-	const pi = {
-		registerTool(tool: Record<string, unknown>): void {
+	const registeredTools: Array<Parameters<ExtensionAPI["registerTool"]>[0]> = [];
+	const registeredCommands: Array<{ name: string; def: Parameters<ExtensionAPI["registerCommand"]>[1] }> = [];
+	const events = new Set<string>();
+
+	const registrations: Pick<ExtensionAPI, "registerTool" | "registerCommand" | "on"> = {
+		registerTool(tool) {
 			registeredTools.push(tool);
 		},
-		registerCommand(name: string, def: Record<string, unknown>): void {
+		registerCommand(name, def) {
 			registeredCommands.push({ name, def });
 		},
-		on(event: string, handler: (...args: never[]) => unknown): void {
-			const list = events.get(event) ?? [];
-			list.push(handler);
-			events.set(event, list);
+		on(event) {
+			events.add(event);
+
+			return () => {};
 		},
-	} as unknown as ExtensionAPI;
+	};
+
+	// SAFETY: the factory only registers capabilities; these tests never execute the captured handlers.
+	const pi = registrations as ExtensionAPI;
+
 	return { pi, registeredTools, registeredCommands, events };
 }
 
@@ -37,8 +43,8 @@ describe("pigram production entrypoint", () => {
 		expect(ask).toBeDefined();
 		expect(ask?.executionMode).toBe("sequential");
 		// TypeBox union of select | confirm | text
-		const schema = ask?.parameters as { anyOf?: unknown[] } | undefined;
-		expect(schema?.anyOf).toHaveLength(3);
+		expect(ask?.parameters).toEqual(telegramAskParameters);
+		expect(telegramAskParameters.anyOf).toHaveLength(3);
 		expect(ask?.description).toContain("Telegram");
 	});
 

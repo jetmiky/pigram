@@ -23,12 +23,6 @@
  */
 const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$/;
 
-/** A data row is any non-empty line containing a pipe. */
-function isTableRow(line: string): boolean {
-	const stripped = line.trim();
-	return stripped.length > 0 && stripped.includes("|");
-}
-
 /**
  * True when the markdown contains a complete GFM pipe table: a header row
  * followed by a delimiter row. Fenced code blocks are skipped — a table
@@ -39,12 +33,15 @@ export function containsGfmTable(markdown: string): boolean {
 
 	const lines = markdown.split("\n");
 	let inFence = false;
+
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i]!;
+
 		if (line.trimStart().startsWith("```")) {
 			inFence = !inFence;
 			continue;
 		}
+
 		if (inFence) continue;
 
 		if (
@@ -55,6 +52,7 @@ export function containsGfmTable(markdown: string): boolean {
 			return true;
 		}
 	}
+
 	return false;
 }
 
@@ -64,8 +62,11 @@ export function containsGfmTable(markdown: string): boolean {
  */
 export function splitTableRow(row: string): string[] {
 	let s = row.trim();
+
 	if (s.startsWith("|")) s = s.slice(1);
+
 	if (s.endsWith("|")) s = s.slice(0, -1);
+
 	return s.split("|").map((c) => c.trim());
 }
 
@@ -77,9 +78,9 @@ export function splitTableRow(row: string): string[] {
  * Transient failures (network, 5xx, rate limit) do NOT qualify: the message
  * may have reached Telegram, so legacy-resending risks a duplicate bubble.
  */
-export function isPermanentRichError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
+export function isPermanentRichError(error: Error): boolean {
 	const message = error.message.toLowerCase();
+
 	return (
 		message.includes("bad request") ||
 		message.includes("not found") ||

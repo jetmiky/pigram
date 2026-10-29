@@ -69,13 +69,16 @@ describe("formatGitReply", () => {
 
 describe("runGitSpec", () => {
 	// A scripted runner: records the argv it was called with and returns queued results.
-	function scriptedRunner(results: GitRunResult[]): { runner: GitRunner; calls: string[][] } {
+	function scriptedRunner(results: GitRunResult[]) {
 		const calls: string[][] = [];
 		let i = 0;
+
 		const runner: GitRunner = async (args) => {
 			calls.push(args);
+
 			return results[i++] ?? { exitCode: 0, stdout: "", stderr: "" };
 		};
+
 		return { runner, calls };
 	}
 
@@ -91,11 +94,13 @@ describe("runGitSpec", () => {
 			{ exitCode: 0, stdout: "", stderr: "" }, // check-ref-format
 			{ exitCode: 0, stdout: "Switched to a new branch 'feat'", stderr: "" }, // switch
 		]);
+
 		const reply = await runGitSpec(
 			getGitExecSpec({ ok: true, kind: "nb", branchName: "feat" }),
 			runner,
 			"/repo",
 		);
+
 		expect(calls).toEqual([
 			["check-ref-format", "--branch", "feat"],
 			["switch", "-c", "feat"],
@@ -107,11 +112,13 @@ describe("runGitSpec", () => {
 		const { runner, calls } = scriptedRunner([
 			{ exitCode: 1, stdout: "", stderr: "bad ref" }, // check-ref-format fails
 		]);
+
 		const reply = await runGitSpec(
 			getGitExecSpec({ ok: true, kind: "nb", branchName: "bad..name" }),
 			runner,
 			"/repo",
 		);
+
 		// switch must NOT run after validation fails.
 		expect(calls).toEqual([["check-ref-format", "--branch", "bad..name"]]);
 		expect(reply).toBe("invalid branch name\n\nbad ref");

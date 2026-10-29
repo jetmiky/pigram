@@ -1,6 +1,11 @@
 // Telegram HTML formatting support for AI assistant replies
 
-import { marked } from "marked";
+import { marked, type Parser, type RendererObject, type Tokens } from "marked";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+
+const TextTokenSchema = Type.Object({ text: Type.String() });
+const ListStartSchema = Type.Number({ exclusiveMinimum: 0 });
 
 export function escapeTelegramHtml(text: string): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -56,19 +61,25 @@ function isWideCodePoint(cp: number): boolean {
 // and combining marks contribute 0; wide glyphs contribute 2; everything else 1.
 export function displayWidth(text: string): number {
 	let width = 0;
+
 	for (const ch of text) {
 		const cp = ch.codePointAt(0)!;
+
 		if (cp === 0x200d) continue; // zero-width joiner
+
 		if (cp >= 0xfe00 && cp <= 0xfe0f) continue; // variation selectors
+
 		if (cp >= 0x0300 && cp <= 0x036f) continue; // combining diacriticals
 		width += isWideCodePoint(cp) ? 2 : 1;
 	}
+
 	return width;
 }
 
 // Right-pad a cell with spaces to a target monospace width.
 function padCell(cell: string, target: number): string {
 	const pad = target - displayWidth(decodeTelegramHtml(cell));
+
 	return pad > 0 ? cell + " ".repeat(pad) : cell;
 }
 
@@ -77,13 +88,16 @@ function padCell(cell: string, target: number): string {
 // those ("Token with 'paragraph' type was not found"). Recurse through the
 // wrappers and parseInline only the inline leaves. Multi-line results are
 // re-indented under the list marker by renderList's continuation regex.
-function renderQuoteContent(token: any, parser: any): string {
+function renderQuoteContent(token: Tokens.Blockquote | Tokens.Generic, parser: Parser): string {
 	return (token.tokens ?? [])
-		.map((t: any) => {
+		.map((t) => {
 			if (t.type === "blockquote") return renderQuoteContent(t, parser);
+
 			if (t.type === "space") return "";
-			if (t.tokens) return parser.parseInline(t.tokens);
-			return typeof t.text === "string" ? escapeTelegramHtml(t.text) : "";
+
+			if ("tokens" in t && t.tokens) return parser.parseInline(t.tokens);
+
+			return Value.Check(TextTokenSchema, t) ? escapeTelegramHtml(t.text) : "";
 		})
 		.filter((s: string) => s.length > 0)
 		.join("\n");
@@ -96,13 +110,14 @@ function renderQuoteContent(token: any, parser: any): string {
 // inline children are parsed inline, nested lists recurse one indent deeper,
 // and the renderer fully owns the recursion (marked never re-enters for the
 // nested lists because we never hand them back to the parser).
-function renderList(token: any, parser: any, depth: number): string {
+function renderList(token: Tokens.List | Tokens.Generic, parser: Parser, depth: number): string {
 	const indent = "  ".repeat(depth);
 	const lines: string[] = [];
-	let ordinal = typeof token.start === "number" && token.start > 0 ? token.start : 1;
+	let ordinal = Value.Check(ListStartSchema, token.start) ? token.start : 1;
 
 	for (const item of token.items) {
 		let marker: string;
+
 		if (item.task) {
 			marker = item.checked ? "☑ " : "☐ ";
 		} else if (token.ordered) {
@@ -113,6 +128,7 @@ function renderList(token: any, parser: any, depth: number): string {
 
 		const inlineParts: string[] = [];
 		const nestedBlocks: string[] = [];
+
 		for (const child of item.tokens ?? []) {
 			if (child.type === "list") {
 				nestedBlocks.push(renderList(child, parser, depth + 1));
@@ -123,7 +139,7 @@ function renderList(token: any, parser: any, depth: number): string {
 				// blank line between loose-list paragraphs — skip
 			} else if (child.tokens) {
 				inlineParts.push(parser.parseInline(child.tokens));
-			} else if (typeof child.text === "string") {
+			} else if (Value.Check(TextTokenSchema, child)) {
 				inlineParts.push(escapeTelegramHtml(child.text));
 			}
 		}
@@ -133,6 +149,7 @@ function renderList(token: any, parser: any, depth: number): string {
 		const continuation = `\n${indent}${" ".repeat(marker.length)}`;
 		const head = inlineParts.join(continuation).replace(/\s*\n\s*/g, continuation);
 		lines.push(`${indent}${marker}${head}`);
+
 		for (const block of nestedBlocks) lines.push(block);
 	}
 
@@ -157,9 +174,11 @@ function renderList(token: any, parser: any, depth: number): string {
  */
 function sanitizeRawHtml(markdown: string): string {
 	const stashed: string[] = [];
+
 	const stash = (s: string) => {
 		stashed.push(s);
-		return `\u0000${stashed.length - 1}\u0000`;
+
+		return `\0${stashed.length - 1}\0`;
 	};
 
 	// 1. Stash fenced code blocks — their content must stay verbatim.
@@ -186,41 +205,46 @@ function sanitizeRawHtml(markdown: string): string {
 	//    <p>, <ul>, <ol>, <li>, <table>, etc. — anything Telegram won't render.
 	text = text.replace(/<\/?[a-zA-Z][^>]*>/g, "");
 
-	// 7. Restore stashed code.
-	text = text.replace(/\u0000(\d+)\u0000/g, (_, i: string) => stashed[Number(i)]!);
+	// 7. Restore NUL-delimited code placeholders.
+	text = text.replace(/\0(\d+)\0/g, (_, i: string) => stashed[Number(i)]!);
 
 	return text;
 }
 
 export function markdownToTelegramHtml(markdown: string): string {
 	const sanitized = sanitizeRawHtml(markdown);
-	const renderer = {
-		text(this: any, token: { text: string; tokens?: any[] }): string {
+
+	const renderer: RendererObject = {
+		text(token): string {
 			// Block-level text tokens carry inline children (bold, code, etc.).
 			// Parse them so emphasis inside lists and cells is preserved.
-			return token.tokens ? this.parser.parseInline(token.tokens) : escapeTelegramHtml(token.text);
+			return "tokens" in token && token.tokens ? this.parser.parseInline(token.tokens) : escapeTelegramHtml(token.text);
 		},
-		html(token: { text: string }): string {
+		html(token): string {
 			return escapeTelegramHtml(token.text);
 		},
-		strong(this: any, token: { tokens: any[] }): string {
+		strong(token): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<b>${content}</b>`;
 		},
-		em(this: any, token: { tokens: any[] }): string {
+		em(token): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<i>${content}</i>`;
 		},
-		link(this: any, token: { href: string; tokens: any[] }): string {
+		link(token): string {
 			const content = this.parser.parseInline(token.tokens);
+
 			return `<a href="${token.href}">${content}</a>`;
 		},
-		paragraph(this: any, token: { tokens: any[] }): string {
+		paragraph(token): string {
 			// Telegram HTML does not support <p>; emit inline content with paragraph spacing
 			return this.parser.parseInline(token.tokens) + '\n\n';
 		},
-		heading(this: any, token: { tokens: any[] }): string {
+		heading(token): string {
 			const content = stripBold(this.parser.parseInline(token.tokens));
+
 			return `<b>${content}</b>\n\n`;
 		},
 		// Telegram HTML has no <hr>; emitting one makes Telegram reject the whole
@@ -232,7 +256,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 		br(): string {
 			return "\n";
 		},
-		list(this: any, token: { ordered: boolean; items: any[] }): string {
+		list(token): string {
 			return renderList(token, this.parser, 0) + '\n\n';
 		},
 		// Telegram has no <table> primitive. Render tables as a fixed-width
@@ -241,21 +265,23 @@ export function markdownToTelegramHtml(markdown: string): string {
 		// reduced to plain text (no inline tags inside <pre>) and padded to the
 		// widest cell per column using display width (so emoji/CJK align too).
 		// A box-drawing divider under the header gives it the table look.
-		table(this: any, token: { header: any[]; rows: any[][] }): string {
-			const toText = (cell: any): string =>
+		table(token): string {
+			const toText = (cell: Tokens.TableCell): string =>
 				stripTags(this.parser.parseInline(cell.tokens)).replace(/\s+/g, " ").trim();
 
 			const header = token.header.map(toText);
-			const rows = token.rows.map((row: any[]) => row.map(toText));
+			const rows = token.rows.map((row) => row.map(toText));
 			const columnCount = header.length;
 
 			// Widest display-width cell per column drives the padding target.
 			const widths: number[] = header.map((cell, col) => {
 				let max = displayWidth(decodeTelegramHtml(cell));
+
 				for (const row of rows) {
 					const value = row[col] ?? "";
 					max = Math.max(max, displayWidth(decodeTelegramHtml(value)));
 				}
+
 				return max;
 			});
 
@@ -267,13 +293,14 @@ export function markdownToTelegramHtml(markdown: string): string {
 			const divider = widths.map((w) => "─".repeat(Math.max(1, w))).join("──");
 
 			const lines = [renderRow(header), divider, ...rows.map((row) => renderRow(row))];
+
 			// The whole grid is escaped plain text wrapped in <pre>.
 			return `<pre>${lines.join("\n")}</pre>\n\n`;
 		},
 	};
 	
 	marked.use({ renderer });
-	const html = marked.parse(sanitized) as string;
+	const html = marked.parse(sanitized, { async: false });
 	
 	// Collapse the extra blank lines introduced by block separators and trim edges
 	return html.replace(/\n{3,}/g, "\n\n").trim();
@@ -301,6 +328,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 		for (let j = tagStack.length - 1; j >= 0; j--) {
 			currentChunk += `</${tagStack[j]!.name}>`;
 		}
+
 		chunks.push(currentChunk);
 		currentChunk = tagStack.map(t => t.fullTag).join('');
 	};
@@ -309,6 +337,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 		if (html[i]! === '<') {
 			// Find end of tag
 			const tagEnd = html.indexOf('>', i);
+
 			if (tagEnd === -1) break; // Malformed HTML
 
 			const tag = html.slice(i, tagEnd + 1);
@@ -318,6 +347,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 			// Opening tags ADD to the stack (future closing cost goes up);
 			// closing tags REMOVE from the stack (cost goes down).
 			let closingDelta = 0;
+
 			if (tag.startsWith('</')) {
 				const name = tag.slice(2, -1).trim();
 				closingDelta = -(name.length + 3); // </name>
@@ -338,6 +368,7 @@ export function chunkTelegramHtml(html: string, maxLength = 4096): string[] {
 			// Update tagStack
 			if (tag.startsWith('</')) {
 				const tagName = tag.slice(2, -1).trim();
+
 				for (let j = tagStack.length - 1; j >= 0; j--) {
 					if (tagStack[j]!.name === tagName) {
 						tagStack.splice(j, 1);
@@ -388,14 +419,17 @@ export function chunkPlainText(text: string, maxLength = 4096): string[] {
 	while (remaining.length > maxLength) {
 		// Try to split at the last paragraph break within maxLength
 		let splitAt = remaining.lastIndexOf('\n\n', maxLength);
+
 		if (splitAt <= 0) {
 			// No paragraph break — try single newline
 			splitAt = remaining.lastIndexOf('\n', maxLength);
 		}
+
 		if (splitAt <= 0) {
 			// No newline at all — hard split at maxLength
 			splitAt = maxLength;
 		}
+
 		chunks.push(remaining.slice(0, splitAt));
 		remaining = remaining.slice(splitAt).replace(/^\n+/, '');
 	}

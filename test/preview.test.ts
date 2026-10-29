@@ -11,10 +11,12 @@ interface Call {
 function fakeTransport(opts: { failHtml?: boolean } = {}) {
 	const calls: Call[] = [];
 	let nextId = 500;
+
 	const transport: PreviewTransport = {
 		async sendMessage(o) {
 			if (opts.failHtml && o.parseMode === "HTML") throw new Error("Bad Request: can't parse entities");
 			calls.push({ method: "sendMessage", text: o.text, parseMode: o.parseMode });
+
 			return { message_id: nextId++ };
 		},
 		async editMessageText(o) {
@@ -22,6 +24,7 @@ function fakeTransport(opts: { failHtml?: boolean } = {}) {
 			calls.push({ method: "editMessageText", text: o.text, messageId: o.messageId, parseMode: o.parseMode });
 		},
 	};
+
 	return { calls, transport };
 }
 
@@ -29,6 +32,7 @@ function fakeTransport(opts: { failHtml?: boolean } = {}) {
 function controllable() {
 	let current = 0;
 	let pending: (() => void) | undefined;
+
 	const timer: PreviewTimer = {
 		set(fn) {
 			pending = fn;
@@ -37,6 +41,7 @@ function controllable() {
 			pending = undefined;
 		},
 	};
+
 	return {
 		now: () => current,
 		timer,
@@ -217,9 +222,11 @@ describe("PreviewSession rich table finalize", () => {
 	} = {}) {
 		const calls: Array<{ method: string; text?: string; markdown?: string; messageId?: number; parseMode?: "HTML" }> = [];
 		let nextId = 500;
+
 		const transport: PreviewTransport = {
 			async sendMessage(o) {
 				calls.push({ method: "sendMessage", text: o.text, parseMode: o.parseMode });
+
 				return { message_id: nextId++ };
 			},
 			async editMessageText(o) {
@@ -227,14 +234,18 @@ describe("PreviewSession rich table finalize", () => {
 			},
 			async sendRichMessage(o) {
 				calls.push({ method: "sendRichMessage", markdown: o.markdown });
+
 				if (opts.failRich) throw opts.richError ?? new Error("Bad Request");
+
 				return { message_id: nextId++ };
 			},
 			async editMessageRich(o) {
 				calls.push({ method: "editMessageRich", markdown: o.markdown, messageId: o.messageId });
+
 				if (opts.failRich) throw opts.richError ?? new Error("Bad Request");
 			},
 		};
+
 		return { calls, transport };
 	}
 
@@ -269,6 +280,7 @@ describe("PreviewSession rich table finalize", () => {
 			failRich: true,
 			richError: new Error("Bad Request: RICH_MESSAGE_INVALID"),
 		});
+
 		const c = controllable();
 		const s = new PreviewSession(1, { transport, now: c.now, timer: c.timer });
 
@@ -289,19 +301,24 @@ describe("PreviewSession rich table finalize", () => {
 	test("transient rich failure falls back to HTML but does NOT latch", async () => {
 		let failNext = true;
 		const calls: Array<{ method: string; markdown?: string; parseMode?: "HTML" }> = [];
+
 		const transport: PreviewTransport = {
 			async sendMessage(o) {
 				calls.push({ method: "sendMessage", parseMode: o.parseMode });
+
 				return { message_id: 1 };
 			},
 			async editMessageText() {},
 			async sendRichMessage() {
 				calls.push({ method: "sendRichMessage" });
+
 				if (failNext) throw new Error("fetch failed");
+
 				return { message_id: 2 };
 			},
 			async editMessageRich() {},
 		};
+
 		const c = controllable();
 		const s = new PreviewSession(1, { transport, now: c.now, timer: c.timer });
 
@@ -314,6 +331,25 @@ describe("PreviewSession rich table finalize", () => {
 		await s.finalize(TABLE_MD); // retries rich — not latched
 		expect(calls.some((x) => x.method === "sendRichMessage")).toBe(true);
 	});
+
+	test.each([["Bad Request"], [undefined], [null], [{ message: "Bad Request" }]])(
+		"non-Error rich failures do not latch capability off (%j)",
+		async (cause) => {
+			const { transport } = fakeRichTransport();
+			let attempts = 0;
+			transport.sendRichMessage = async () => {
+				attempts++;
+				throw cause;
+			};
+
+			const session = new PreviewSession(1, { transport });
+
+			await session.finalize(TABLE_MD);
+			await session.finalize(TABLE_MD);
+
+			expect(attempts).toBe(2);
+		},
+	);
 
 	test("richTables: false never attempts the rich path", async () => {
 		const { calls, transport } = fakeRichTransport();

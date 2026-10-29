@@ -64,8 +64,7 @@ describe("isPermanentRichError", () => {
 		expect(isPermanentRichError(new Error("socket hang up"))).toBe(false);
 	});
 
-	test("non-Error values are NOT permanent", () => {
-		expect(isPermanentRichError("Bad Request")).toBe(false);
-		expect(isPermanentRichError(undefined)).toBe(false);
+	test("an empty error message is NOT permanent", () => {
+		expect(isPermanentRichError(new Error(""))).toBe(false);
 	});
 });

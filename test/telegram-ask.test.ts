@@ -15,11 +15,14 @@ class FakeTransport implements Pick<TelegramTransport, "sendMessage" | "editMess
 
 	async sendMessage(opts: { chatId: number; text: string; replyMarkup?: unknown }) {
 		this.sendMessageCalls.push(opts);
+
 		if (this.failSends) throw new Error("send failed");
+
 		return { message_id: 99 };
 	}
 	async editMessageText(opts: { chatId: number; messageId: number; text: string; replyMarkup?: unknown }) {
 		this.editMessageTextCalls.push(opts);
+
 		if (this.failEdits) throw new Error("edit failed");
 	}
 	async answerCallbackQuery(opts: { callbackQueryId: string; text?: string }) {
@@ -42,7 +45,9 @@ function query(data: string, userId = 7, chatId = 42): TelegramCallbackQuery {
 
 function runTool(controller: TelegramAskController, params: TelegramAskToolParams, signal?: AbortSignal) {
 	const tool = createTelegramAskTool(controller);
-	return tool.execute("call-1", params as never, signal, undefined, {} as never);
+
+	// SAFETY: this tool ignores its execution context; the test drives it through the supplied controller.
+	return tool.execute("call-1", params, signal, undefined, {} as never);
 }
 
 describe("telegram_ask extension tool boundary", () => {
@@ -56,6 +61,7 @@ describe("telegram_ask extension tool boundary", () => {
 			question: "Pick one",
 			options: [{ label: "Friendly", value: "friendly" }],
 		});
+
 		expect(transport.sendMessageCalls[0]?.replyMarkup).toEqual({
 			inline_keyboard: [[{ text: "Friendly", callback_data: "ask-1:0" }]],
 		});
@@ -64,6 +70,7 @@ describe("telegram_ask extension tool boundary", () => {
 		const result = await pending;
 		expect(result.details).toEqual({ status: "answered", value: "friendly" });
 		expect(transport.editMessageTextCalls[0]?.text).toBe("Pick one\n✓ Friendly");
+		expect(transport.answerCallbackQueryCalls[0]).toStrictEqual({ callbackQueryId: "q-ask-1:0" });
 	});
 
 	test("wrong user and wrong chat do not resolve; valid confirm No does", async () => {
@@ -74,7 +81,10 @@ describe("telegram_ask extension tool boundary", () => {
 
 		await controller.handleCallbackQuery(query("ask-2:1", 8));
 		await controller.handleCallbackQuery(query("ask-2:1", 7, 99));
-		expect(transport.answerCallbackQueryCalls).toHaveLength(2);
+		expect(transport.answerCallbackQueryCalls).toStrictEqual([
+			{ callbackQueryId: "q-ask-2:1", text: "Not authorized" },
+			{ callbackQueryId: "q-ask-2:1", text: "Not authorized" },
+		]);
 		expect(await Promise.race([pending.then(() => "done"), Bun.sleep(5).then(() => "pending")])).toBe("pending");
 
 		await controller.handleCallbackQuery(query("ask-2:1"));
@@ -87,6 +97,7 @@ describe("telegram_ask extension tool boundary", () => {
 		controller.beginTurn({ chatId: 42, userId: 7 });
 		const pending = runTool(controller, { kind: "text", question: "What is your name?" });
 
+		expect(transport.sendMessageCalls[0]).toStrictEqual({ chatId: 42, text: "What is your name?" });
 		expect(controller.handleText("Alice", { chatId: 99, userId: 7 })).toBe(false);
 		expect(controller.handleText("Alice", { chatId: 42, userId: 7 })).toBe(true);
 		expect((await pending).details).toEqual({ status: "answered", value: "Alice" });
@@ -174,12 +185,31 @@ describe("telegram_ask extension tool boundary", () => {
 		await expect(runTool(controller, { kind: "select", question: "x", options: [] })).rejects.toThrow(
 			"select requires at least one option",
 		);
+		const invalidConfirm = { kind: "confirm" as const, question: "x", options: [{ label: "A", value: "a" }] };
+
+		await expect(runTool(controller, invalidConfirm)).rejects.toThrow("confirm does not accept options");
 		await expect(
-			runTool(controller, { kind: "confirm", question: "x", options: [{ label: "A", value: "a" }] } as never),
-		).rejects.toThrow("confirm does not accept options");
-		await expect(
-			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 } as never),
+			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 }),
 		).rejects.toThrow("timeoutSeconds must be between 15 and 900");
+	});
+
+	test("resolves a controller getter at execution time", async () => {
+		let controller: TelegramAskController | undefined;
+		const tool = createTelegramAskTool(() => controller);
+		// SAFETY: this tool ignores its execution context; only the controller getter is used.
+		const context = {} as never;
+
+		expect((await tool.execute("before", { kind: "text", question: "Before connect" }, undefined, undefined, context)).details).toEqual({
+			status: "unavailable",
+			reason: "not_telegram_turn",
+		});
+
+		controller = new TelegramAskController({ transport: new FakeTransport() });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+		const pending = tool.execute("after", { kind: "text", question: "After connect" }, undefined, undefined, context);
+		controller.handleText("connected", { chatId: 42, userId: 7 });
+
+		expect((await pending).details).toEqual({ status: "answered", value: "connected" });
 	});
 
 	test("hasPendingText is true only while a text question waits", async () => {

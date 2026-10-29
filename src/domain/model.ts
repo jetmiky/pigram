@@ -54,14 +54,17 @@ export function resolveModelTarget<TModel extends ModelLookupModel>(options: {
 	});
 
 	const slashIndex = specifier.indexOf("/");
+
 	if (slashIndex === -1) {
 		// No slash: a bare model id under the current provider.
 		const model = registry.find(currentProvider, specifier);
+
 		return model ? { ok: true, model } : notFound(specifier);
 	}
 
 	// Case-insensitive set of known providers.
 	const providerByLower = new Map<string, string>();
+
 	for (const m of registry.getAll()) {
 		providerByLower.set(m.provider.toLowerCase(), m.provider);
 	}
@@ -74,6 +77,7 @@ export function resolveModelTarget<TModel extends ModelLookupModel>(options: {
 		// contain slashes) is the model id.
 		const modelId = specifier.slice(slashIndex + 1);
 		const model = registry.find(canonicalProvider, modelId);
+
 		return model
 			? { ok: true, model }
 			: { ok: false, message: `model not found: ${specifier} (provider: ${canonicalProvider})` };
@@ -82,5 +86,6 @@ export function resolveModelTarget<TModel extends ModelLookupModel>(options: {
 	// Prefix is NOT a known provider: the whole specifier is the model id
 	// (e.g. "kr/claude-sonnet-4.5") under the current provider.
 	const model = registry.find(currentProvider, specifier);
+
 	return model ? { ok: true, model } : notFound(specifier);
 }

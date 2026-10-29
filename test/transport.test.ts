@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHttpTransport, type TelegramTransport } from "../src/telegram/transport";
+import { createHttpTransport } from "../src/telegram/transport";
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ class FakeFetch {
 	responses: Response[] = [];
 	private responseIndex = 0;
 
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Negative tests must serialize malformed API payloads without claiming they are valid.
 	queueResponse(body: unknown, status = 200): void {
 		this.responses.push(
 			new Response(JSON.stringify(body), {
@@ -30,9 +31,11 @@ class FakeFetch {
 
 	fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
 		this.calls.push({ url: url.toString(), init });
+
 		if (this.responseIndex >= this.responses.length) {
 			throw new Error("FakeFetch: no more queued responses");
 		}
+
 		return this.responses[this.responseIndex++];
 	};
 
@@ -40,13 +43,9 @@ class FakeFetch {
 		return this.calls[this.calls.length - 1];
 	}
 
-	async lastBodyAsJson(): Promise<unknown> {
-		const last = this.lastCall();
-		if (!last?.init?.body) return null;
-		if (typeof last.init.body === "string") {
-			return JSON.parse(last.init.body);
-		}
-		return null;
+	async expectLastBody<T>(expected: T): Promise<void> {
+		const body = this.lastCall()?.init?.body;
+		expect(await new Response(body).json()).toEqual(expected);
 	}
 }
 
@@ -57,7 +56,7 @@ describe("TelegramTransport", () => {
 		const fake = new FakeFetch();
 		fake.queueResponse({
 			ok: true,
-			result: { id: 123, username: "testbot", is_bot: true, first_name: "Test" },
+			result: { id: 123, username: "testbot", is_bot: true, first_name: "Test", can_join_groups: true },
 		});
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
@@ -98,12 +97,31 @@ describe("TelegramTransport", () => {
 		expect(updates[0]?.update_id).toBe(456);
 		expect(updates[0]?.message?.text).toBe("hello");
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({
+		await fake.expectLastBody({
 			offset: 100,
 			timeout: 30,
 			allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
 		});
+	});
+
+	test("getUpdates accepts callback queries with Telegram metadata", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({
+			ok: true,
+			result: [{
+				update_id: 1,
+				callback_query: {
+					id: "q-1",
+					from: { id: 7, is_bot: false, first_name: "User" },
+					message: { message_id: 99, date: 1, chat: { id: 42, type: "private" } },
+					chat_instance: "instance",
+					data: "ask-1:0",
+				},
+			}],
+		});
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		expect((await transport.getUpdates({}))[0]?.callback_query?.data).toBe("ask-1:0");
 	});
 
 	test("getUpdates always pins allowed_updates including callback_query", async () => {
@@ -113,19 +131,22 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.getUpdates({ offset: 1 });
 
-		const body = await fake.lastBodyAsJson();
-		expect(body.allowed_updates).toContain("callback_query");
-		expect(body.allowed_updates).toContain("message");
+		await fake.expectLastBody(expect.objectContaining({
+			allowed_updates: expect.arrayContaining(["callback_query", "message"]),
+		}));
 	});
 
 	test("getUpdates aborts a request that outlives the server long-poll timeout", async () => {
 		let requestSignal: AbortSignal | undefined;
+
 		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			requestSignal = init?.signal ?? undefined;
+
 			return new Promise((_resolve, reject) => {
 				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
 			});
 		};
+
 		const transport = createHttpTransport({
 			botToken: TOKEN,
 			fetchImpl,
@@ -138,12 +159,15 @@ describe("TelegramTransport", () => {
 
 	test("getUpdates lifecycle cancellation aborts a pending request promptly", async () => {
 		let requestSignal: AbortSignal | undefined;
+
 		const fetchImpl = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			requestSignal = init?.signal ?? undefined;
+
 			return new Promise((_resolve, reject) => {
 				requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
 			});
 		};
+
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl });
 		const controller = new AbortController();
 		const pending = transport.getUpdates({ offset: 1, timeout: 30 }, controller.signal);
@@ -176,6 +200,7 @@ describe("TelegramTransport", () => {
 		});
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 		const result = await transport.sendMessage({
 			chatId: 222,
 			text: "Hello world",
@@ -184,8 +209,7 @@ describe("TelegramTransport", () => {
 
 		expect(result.message_id).toBe(999);
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({
+		await fake.expectLastBody({
 			chat_id: 222,
 			text: "Hello world",
 			parse_mode: "HTML",
@@ -199,8 +223,18 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.sendMessage({ chatId: 333, text: "plain" });
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({ chat_id: 333, text: "plain" });
+		await fake.expectLastBody({ chat_id: 333, text: "plain" });
+	});
+
+	test("sendMessage preserves reply markup", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: 111 } });
+		const replyMarkup = { inline_keyboard: [[{ text: "Yes", callback_data: "yes" }]] };
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await transport.sendMessage({ chatId: 333, text: "Choose", replyMarkup });
+
+		await fake.expectLastBody({ chat_id: 333, text: "Choose", reply_markup: replyMarkup });
 	});
 
 	test("editMessageText maps messageId to message_id", async () => {
@@ -215,8 +249,7 @@ describe("TelegramTransport", () => {
 			parseMode: "HTML",
 		});
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({
+		await fake.expectLastBody({
 			chat_id: 444,
 			message_id: 555,
 			text: "edited",
@@ -232,14 +265,14 @@ describe("TelegramTransport", () => {
 		fake.queueResponse({ ok: true, result: { message_id: 777 } });
 
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 		const result = await transport.sendRichMessage({
 			chatId: 444,
 			markdown: "| A | B |\n|---|---|\n| 1 | 2 |",
 		});
 
 		expect(result.message_id).toBe(777);
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({
+		await fake.expectLastBody({
 			chat_id: 444,
 			rich_message: { markdown: "| A | B |\n|---|---|\n| 1 | 2 |" },
 		});
@@ -258,8 +291,7 @@ describe("TelegramTransport", () => {
 			markdown: "| A |\n|---|\n| 1 |",
 		});
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({
+		await fake.expectLastBody({
 			chat_id: 444,
 			message_id: 555,
 			rich_message: { markdown: "| A |\n|---|\n| 1 |" },
@@ -275,8 +307,7 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.sendChatAction({ chatId: 666, action: "typing" });
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({ chat_id: 666, action: "typing" });
+		await fake.expectLastBody({ chat_id: 666, action: "typing" });
 	});
 
 	test("answerCallbackQuery maps callbackQueryId to callback_query_id", async () => {
@@ -286,8 +317,77 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.answerCallbackQuery({ callbackQueryId: "cb-123", text: "acknowledged" });
 
-		const body = await fake.lastBodyAsJson();
-		expect(body).toEqual({ callback_query_id: "cb-123", text: "acknowledged" });
+		await fake.expectLastBody({ callback_query_id: "cb-123", text: "acknowledged" });
+	});
+
+	test.each([
+		[null],
+		[[]],
+		[42],
+		[{ ok: "true", result: {} }],
+		[{ ok: true, description: 123, result: {} }],
+	])("rejects malformed Telegram envelopes (%j)", async (payload) => {
+		const fake = new FakeFetch();
+		fake.queueResponse(payload);
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getMe()).rejects.toThrow("Invalid Telegram API getMe response");
+	});
+
+	test.each([
+		[null],
+		[{}],
+		[{ id: "123", is_bot: true, first_name: "Bot" }],
+		[{ id: -1, is_bot: true, first_name: "Bot" }],
+		[{ id: 123, is_bot: true, first_name: "Bot", username: 1 }],
+	])("rejects malformed bot identities (%j)", async (result) => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getMe()).rejects.toThrow("Invalid Telegram API getMe result");
+	});
+
+	test.each([
+		{ result: [{ update_id: "1" }] },
+		{ result: [{ update_id: -1 }] },
+		{ result: [{ update_id: 1, message: { message_id: 1, date: 1, chat: { id: "42", type: "private" } } }] },
+		{ result: [{ update_id: 1, callback_query: { id: "q", from: { id: "7", is_bot: false, first_name: "User" } } }] },
+	])("rejects malformed update identities (%j)", async ({ result }) => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.getUpdates({})).rejects.toThrow("Invalid Telegram API getUpdates result");
+	});
+
+	test("rejects invalid JSON and multipart message IDs", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: "1" } });
+		fake.queueResponse({ ok: true, result: {} });
+		fake.queueResponse({ ok: false, description: "Upload rejected" });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+		const upload = { chatId: 1, filePath: import.meta.filename, fileName: "fixture.ts" };
+
+		await expect(transport.sendMessage({ chatId: 1, text: "test" })).rejects.toThrow("Invalid Telegram API sendMessage result");
+		await expect(transport.sendDocument(upload)).rejects.toThrow("Invalid Telegram API sendDocument result");
+		await expect(transport.sendDocument(upload)).rejects.toThrow("Upload rejected");
+	});
+
+	test("accepts a Message result when editing a regular chat message", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: { message_id: 555, date: 1, chat: { id: 42, type: "private" } } });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.editMessageText({ chatId: 42, messageId: 555, text: "edited" })).resolves.toBeUndefined();
+	});
+
+	test("rejects a false success result for chat actions", async () => {
+		const fake = new FakeFetch();
+		fake.queueResponse({ ok: true, result: false });
+		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
+		await expect(transport.sendChatAction({ chatId: 42, action: "typing" })).rejects.toThrow("Invalid Telegram API sendChatAction result");
 	});
 
 	test("Telegram error response with description throws Error", async () => {
@@ -330,6 +430,7 @@ describe("TelegramTransport", () => {
 
 		try {
 			const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 			const result = await transport.sendDocument({
 				chatId: 888,
 				filePath: testFile,
@@ -345,6 +446,8 @@ describe("TelegramTransport", () => {
 
 			// Check that body is FormData (can't easily inspect contents in test)
 			expect(call.init?.body).toBeInstanceOf(FormData);
+			const form = call.init?.body;
+			expect(form instanceof FormData && form.get("caption")).toBe("Test file");
 		} finally {
 			await rm(tempDir, { recursive: true, force: true });
 		}
@@ -361,6 +464,7 @@ describe("TelegramTransport", () => {
 
 		try {
 			const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
+
 			const result = await transport.sendPhoto({
 				chatId: 999,
 				filePath: testFile,
@@ -372,6 +476,8 @@ describe("TelegramTransport", () => {
 			const call = fake.lastCall();
 			expect(call.url).toBe(`https://api.telegram.org/bot${TOKEN}/sendPhoto`);
 			expect(call.init?.body).toBeInstanceOf(FormData);
+			const form = call.init?.body;
+			expect(form instanceof FormData && form.has("caption")).toBe(false);
 		} finally {
 			await rm(tempDir, { recursive: true, force: true });
 		}
@@ -382,7 +488,7 @@ describe("TelegramTransport", () => {
 		// First call: getFile
 		fake.queueResponse({
 			ok: true,
-			result: { file_id: "file-123", file_path: "documents/file.pdf", file_size: 100 },
+			result: { file_id: "file-123", file_unique_id: "unique-123", file_path: "documents/file.pdf", file_size: 100 },
 		});
 		// Second call: download file bytes
 		fake.queueBinaryResponse(new Uint8Array([0x25, 0x50, 0x44, 0x46])); // %PDF

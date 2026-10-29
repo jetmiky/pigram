@@ -21,25 +21,30 @@
  * for Telegram's single getUpdates slot → 409 → silent bridge).
  */
 
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+
 export const RECONNECT_REQUEST_ENTRY_TYPE = "pigram-reconnect-request";
 export const RECONNECT_CONSUMED_ENTRY_TYPE = "pigram-reconnect-consumed";
 
 /** Persisted in the replacement session; drives reconnect on session_start. */
-export interface ReconnectRequest {
+const ReconnectRequestSchema = Type.Object({
 	/** Unique id so a consumed request is never re-fired (resume/fork safety). */
-	requestId: string;
+	requestId: Type.String({ minLength: 1 }),
 	/** Chat to send the "new session started" confirmation to. */
-	chatId: number;
+	chatId: Type.Integer(),
 	/** Optional session name the user passed as `/new <name>`. */
-	sessionName?: string;
+	sessionName: Type.Optional(Type.String()),
 	/** Whether sessionName was truncated to the max length. */
-	truncated?: boolean;
-}
+	truncated: Type.Optional(Type.Boolean()),
+});
+
+export type ReconnectRequest = Static<typeof ReconnectRequestSchema>;
 
 /** Marker entry recording that a given reconnect request was already handled. */
-export interface ReconnectConsumed {
-	requestId: string;
-}
+const ReconnectConsumedSchema = Type.Object({ requestId: Type.String({ minLength: 1 }) });
+
+export type ReconnectConsumed = Static<typeof ReconnectConsumedSchema>;
 
 /** Minimal shape of a session entry we inspect (pi's SessionEntry, narrowed). */
 export interface InspectableEntry {
@@ -57,31 +62,35 @@ export interface InspectableEntry {
  */
 export function findPendingReconnectRequest(entries: readonly InspectableEntry[]): ReconnectRequest | undefined {
 	const consumed = new Set<string>();
+
 	for (const entry of entries) {
 		if (entry.type !== "custom" || entry.customType !== RECONNECT_CONSUMED_ENTRY_TYPE) continue;
 		const data = entry.data;
-		if (!data || typeof data !== "object") continue;
-		const requestId = (data as ReconnectConsumed).requestId;
-		if (typeof requestId === "string" && requestId.length > 0) consumed.add(requestId);
+
+		if (Value.Check(ReconnectConsumedSchema, data)) consumed.add(data.requestId);
 	}
 
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
+
 		if (!entry || entry.type !== "custom" || entry.customType !== RECONNECT_REQUEST_ENTRY_TYPE) continue;
 		const data = entry.data;
-		if (!data || typeof data !== "object") continue;
-		const request = data as ReconnectRequest;
-		if (typeof request.requestId !== "string" || request.requestId.length === 0) continue;
-		if (typeof request.chatId !== "number") continue;
-		if (consumed.has(request.requestId)) continue;
-		return request;
+
+		if (!Value.Check(ReconnectRequestSchema, data)) continue;
+
+		if (consumed.has(data.requestId)) continue;
+
+		return data;
 	}
+
 	return undefined;
 }
 
 /** Format the Telegram confirmation shown after a successful /new. */
 export function formatNewSessionConfirmation(request: Pick<ReconnectRequest, "sessionName" | "truncated">): string {
 	if (!request.sessionName) return "🆕 Started a fresh pi session";
+
 	if (!request.truncated) return `🆕 Started a fresh pi session: ${request.sessionName}`;
+
 	return `🆕 Started a fresh pi session: ${request.sessionName} (name truncated)`;
 }

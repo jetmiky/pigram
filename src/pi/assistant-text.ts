@@ -8,11 +8,8 @@
  * bundle never pulls pi's types into runtime code.
  */
 
-/** A minimal structural view of a pi content block. */
-interface ContentBlock {
-	type: string;
-	text?: string;
-}
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 /** A minimal structural view of a pi agent message. */
 export interface AgentMessageLike {
@@ -22,6 +19,8 @@ export interface AgentMessageLike {
 	content?: unknown;
 }
 
+const TextBlockSchema = Type.Object({ type: Type.Literal("text"), text: Type.String() });
+
 /**
  * Concatenate the text of every `text` block in a message, in order.
  * Non-text blocks (thinking, toolCall) and malformed blocks are ignored.
@@ -29,11 +28,11 @@ export interface AgentMessageLike {
  */
 export function getAgentMessageText(message: AgentMessageLike): string {
 	const content = Array.isArray(message.content) ? message.content : [];
+
 	const joined = content
-		.filter((block): block is ContentBlock => typeof block === "object" && block !== null && "type" in block)
-		.filter((block) => block.type === "text" && typeof block.text === "string")
-		.map((block) => block.text as string)
+		.flatMap((block) => Value.Check(TextBlockSchema, block) ? [block.text] : [])
 		.join("");
+
 	return stripReasoningTags(joined);
 }
 
@@ -58,6 +57,7 @@ export function stripReasoningTags(text: string): string {
 	let out = text.replace(/<(thinking|think)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
 	// Remove a dangling opening tag with no close (e.g. truncated reasoning).
 	out = out.replace(/<(thinking|think)\b[^>]*>[\s\S]*$/gi, "");
+
 	// Collapse the blank lines the removal tends to leave behind, and trim.
 	return out.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -80,14 +80,20 @@ export interface AssistantOutcome {
 export function extractAssistantText(messages: readonly AgentMessageLike[]): AssistantOutcome {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
+
 		if (message?.role !== "assistant") continue;
 		const outcome: AssistantOutcome = {};
 		const text = getAgentMessageText(message);
+
 		if (text) outcome.text = text;
-		if (typeof message.stopReason === "string") outcome.stopReason = message.stopReason;
-		if (typeof message.errorMessage === "string") outcome.errorMessage = message.errorMessage;
+
+		if (Value.Check(Type.String(), message.stopReason)) outcome.stopReason = message.stopReason;
+
+		if (Value.Check(Type.String(), message.errorMessage)) outcome.errorMessage = message.errorMessage;
+
 		return outcome;
 	}
+
 	return {};
 }
 
@@ -118,11 +124,18 @@ export function resolveReplyToStore(
 	if (outcome.stopReason === "aborted") {
 		return { shouldDeliver: false };
 	}
+
 	if (outcome.stopReason === "error") {
-		return { shouldDeliver: hasActiveTurn, ...(outcome.errorMessage ? { errorMessage: outcome.errorMessage } : {}) };
+		const reply: ResolvedReply = { shouldDeliver: hasActiveTurn };
+
+		if (outcome.errorMessage) reply.errorMessage = outcome.errorMessage;
+
+		return reply;
 	}
+
 	if (outcome.text) {
 		return { text: outcome.text, shouldDeliver: hasActiveTurn };
 	}
+
 	return { shouldDeliver: false };
 }
