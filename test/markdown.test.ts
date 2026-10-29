@@ -243,6 +243,20 @@ describe("markdownToTelegramHtml — raw HTML sanitization", () => {
 		expect(result).toContain("<code>&lt;br&gt;</code>");
 	});
 
+	test("restores mixed code placeholders including multi-digit indices", () => {
+		const inline = Array.from({ length: 12 }, (_, index) => `\`<tag-${index}>\``).join(" ");
+		const html = markdownToTelegramHtml(`<b>before</b><br>${inline}\n\n\`\`\`\n<b>fenced</b>\n\`\`\`\n\n<i>after</i>`);
+
+		for (let index = 0; index < 12; index++) {
+			expect(html).toContain(`<code>&lt;tag-${index}&gt;</code>`);
+		}
+
+		expect(html).toContain("&lt;b&gt;fenced&lt;/b&gt;");
+		expect(html).toContain("<b>before</b>");
+		expect(html).toContain("<i>after</i>");
+		expect(html).not.toContain("\0");
+	});
+
 	test("strips unsupported tags like <div>, <span>, <p>", () => {
 		const result = markdownToTelegramHtml("<div>content</div>");
 		expect(result).toBe("content");

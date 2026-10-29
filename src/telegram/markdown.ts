@@ -178,7 +178,7 @@ function sanitizeRawHtml(markdown: string): string {
 	const stash = (s: string) => {
 		stashed.push(s);
 
-		return `\u0000${stashed.length - 1}\u0000`;
+		return `\0${stashed.length - 1}\0`;
 	};
 
 	// 1. Stash fenced code blocks — their content must stay verbatim.
@@ -205,8 +205,8 @@ function sanitizeRawHtml(markdown: string): string {
 	//    <p>, <ul>, <ol>, <li>, <table>, etc. — anything Telegram won't render.
 	text = text.replace(/<\/?[a-zA-Z][^>]*>/g, "");
 
-	// 7. Restore stashed code.
-	text = text.replace(/\u0000(\d+)\u0000/g, (_, i: string) => stashed[Number(i)]!);
+	// 7. Restore NUL-delimited code placeholders.
+	text = text.replace(/\0(\d+)\0/g, (_, i: string) => stashed[Number(i)]!);
 
 	return text;
 }
