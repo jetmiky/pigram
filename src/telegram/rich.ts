@@ -78,8 +78,7 @@ export function splitTableRow(row: string): string[] {
  * Transient failures (network, 5xx, rate limit) do NOT qualify: the message
  * may have reached Telegram, so legacy-resending risks a duplicate bubble.
  */
-export function isPermanentRichError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
+export function isPermanentRichError(error: Error): boolean {
 	const message = error.message.toLowerCase();
 
 	return (

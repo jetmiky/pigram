@@ -37,9 +37,10 @@ export interface PollerDeps {
 
 	/**
 	 * Optional error handler for non-abort errors.
+	 * Receives the original thrown cause unchanged for diagnostics.
 	 * The loop continues after calling this.
 	 */
-	onError?: (err: unknown) => void;
+	onError?: (cause: unknown) => void;
 
 	/**
 	 * Delay in milliseconds after a non-abort error before retrying.
@@ -68,7 +69,7 @@ export class TelegramPoller {
 	private readonly getCursor: () => number;
 	private readonly setCursor: (updateId: number) => Promise<void>;
 	private readonly pollTimeoutSeconds: number;
-	private readonly onError: ((err: unknown) => void) | undefined;
+	private readonly onError: PollerDeps["onError"];
 	private readonly errorDelayMs: number;
 	private readonly conflictDelayMs: number;
 
@@ -144,7 +145,7 @@ export class TelegramPoller {
 				// (e.g. a previous session winding down after /new). Back off
 				// longer so it can terminate, instead of racing it. Other errors
 				// use the normal short delay.
-				const delay = this.isConflictError(err) ? this.conflictDelayMs : this.errorDelayMs;
+				const delay = err instanceof Error && this.isConflictError(err) ? this.conflictDelayMs : this.errorDelayMs;
 
 				if (delay > 0) {
 					await this.sleep(delay);
@@ -158,8 +159,7 @@ export class TelegramPoller {
 	 * Telegram phrases it "Conflict: terminated by other getUpdates request";
 	 * we match the stable "Conflict" + "getUpdates" signal case-insensitively.
 	 */
-	private isConflictError(err: unknown): boolean {
-		if (!(err instanceof Error)) return false;
+	private isConflictError(err: Error): boolean {
 		const msg = err.message.toLowerCase();
 
 		return msg.includes("conflict") && msg.includes("getupdates");

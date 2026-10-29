@@ -332,6 +332,25 @@ describe("PreviewSession rich table finalize", () => {
 		expect(calls.some((x) => x.method === "sendRichMessage")).toBe(true);
 	});
 
+	test.each([["Bad Request"], [undefined], [null], [{ message: "Bad Request" }]])(
+		"non-Error rich failures do not latch capability off (%j)",
+		async (cause) => {
+			const { transport } = fakeRichTransport();
+			let attempts = 0;
+			transport.sendRichMessage = async () => {
+				attempts++;
+				throw cause;
+			};
+
+			const session = new PreviewSession(1, { transport });
+
+			await session.finalize(TABLE_MD);
+			await session.finalize(TABLE_MD);
+
+			expect(attempts).toBe(2);
+		},
+	);
+
 	test("richTables: false never attempts the rich path", async () => {
 		const { calls, transport } = fakeRichTransport();
 		const c = controllable();

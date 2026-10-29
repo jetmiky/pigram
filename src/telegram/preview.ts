@@ -241,7 +241,7 @@ export class PreviewSession {
 
 			return false; // transport has no rich support at all
 		} catch (error) {
-			if (isPermanentRichError(error)) this.richDisabled = true;
+			if (error instanceof Error && isPermanentRichError(error)) this.richDisabled = true;
 
 			return false;
 		}

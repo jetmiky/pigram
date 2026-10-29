@@ -403,6 +403,40 @@ describe("TelegramPoller", () => {
 		expect(handler).toHaveBeenCalledTimes(1); // update 100 still delivered
 	});
 
+	test.each([
+		["Conflict: terminated by other getUpdates request"],
+		[{ message: "Conflict: terminated by other getUpdates request" }],
+		[undefined],
+	])(
+		"reports a non-Error cause unchanged without classifying it as a conflict (%j)",
+		async (cause) => {
+			let calls = 0;
+			const controller = new AbortController();
+			const onError = mock<NonNullable<PollerDeps["onError"]>>(() => {});
+
+			const poller = new TelegramPoller({
+				transport: {
+					async getUpdates() {
+						if (++calls === 1) throw cause;
+
+						return [{ update_id: 1 }];
+					},
+				},
+				handler: async () => { controller.abort(); },
+				getCursor: () => 0,
+				setCursor: async () => {},
+				onError,
+				conflictDelayMs: 10_000,
+			});
+
+			await poller.start(controller.signal);
+
+			expect(onError).toHaveBeenCalledTimes(1);
+			expect(onError.mock.calls[0]?.[0]).toBe(cause);
+			expect(calls).toBe(2);
+		},
+	);
+
 	test("a throwing onError handler does NOT kill the loop", async () => {
 		// Regression (silent poller death, path B): the composition root wires
 		// onError to ctx.ui.setStatus, which can throw on a stale context.
