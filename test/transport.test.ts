@@ -42,11 +42,9 @@ class FakeFetch {
 		return this.calls[this.calls.length - 1];
 	}
 
-	expectLastBody<T>(expected: T): void {
+	async expectLastBody<T>(expected: T): Promise<void> {
 		const body = this.lastCall()?.init?.body;
-
-		if (typeof body !== "string") throw new Error("Expected a JSON request body");
-		expect(JSON.parse(body)).toEqual(expected);
+		expect(await new Response(body).json()).toEqual(expected);
 	}
 }
 
@@ -98,7 +96,7 @@ describe("TelegramTransport", () => {
 		expect(updates[0]?.update_id).toBe(456);
 		expect(updates[0]?.message?.text).toBe("hello");
 
-		fake.expectLastBody({
+		await fake.expectLastBody({
 			offset: 100,
 			timeout: 30,
 			allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
@@ -132,7 +130,7 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.getUpdates({ offset: 1 });
 
-		fake.expectLastBody(expect.objectContaining({
+		await fake.expectLastBody(expect.objectContaining({
 			allowed_updates: expect.arrayContaining(["callback_query", "message"]),
 		}));
 	});
@@ -210,7 +208,7 @@ describe("TelegramTransport", () => {
 
 		expect(result.message_id).toBe(999);
 
-		fake.expectLastBody({
+		await fake.expectLastBody({
 			chat_id: 222,
 			text: "Hello world",
 			parse_mode: "HTML",
@@ -224,7 +222,7 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.sendMessage({ chatId: 333, text: "plain" });
 
-		fake.expectLastBody({ chat_id: 333, text: "plain" });
+		await fake.expectLastBody({ chat_id: 333, text: "plain" });
 	});
 
 	test("sendMessage preserves reply markup", async () => {
@@ -235,7 +233,7 @@ describe("TelegramTransport", () => {
 
 		await transport.sendMessage({ chatId: 333, text: "Choose", replyMarkup });
 
-		fake.expectLastBody({ chat_id: 333, text: "Choose", reply_markup: replyMarkup });
+		await fake.expectLastBody({ chat_id: 333, text: "Choose", reply_markup: replyMarkup });
 	});
 
 	test("editMessageText maps messageId to message_id", async () => {
@@ -250,7 +248,7 @@ describe("TelegramTransport", () => {
 			parseMode: "HTML",
 		});
 
-		fake.expectLastBody({
+		await fake.expectLastBody({
 			chat_id: 444,
 			message_id: 555,
 			text: "edited",
@@ -273,7 +271,7 @@ describe("TelegramTransport", () => {
 		});
 
 		expect(result.message_id).toBe(777);
-		fake.expectLastBody({
+		await fake.expectLastBody({
 			chat_id: 444,
 			rich_message: { markdown: "| A | B |\n|---|---|\n| 1 | 2 |" },
 		});
@@ -292,7 +290,7 @@ describe("TelegramTransport", () => {
 			markdown: "| A |\n|---|\n| 1 |",
 		});
 
-		fake.expectLastBody({
+		await fake.expectLastBody({
 			chat_id: 444,
 			message_id: 555,
 			rich_message: { markdown: "| A |\n|---|\n| 1 |" },
@@ -308,7 +306,7 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.sendChatAction({ chatId: 666, action: "typing" });
 
-		fake.expectLastBody({ chat_id: 666, action: "typing" });
+		await fake.expectLastBody({ chat_id: 666, action: "typing" });
 	});
 
 	test("answerCallbackQuery maps callbackQueryId to callback_query_id", async () => {
@@ -318,7 +316,7 @@ describe("TelegramTransport", () => {
 		const transport = createHttpTransport({ botToken: TOKEN, fetchImpl: fake.fetch });
 		await transport.answerCallbackQuery({ callbackQueryId: "cb-123", text: "acknowledged" });
 
-		fake.expectLastBody({ callback_query_id: "cb-123", text: "acknowledged" });
+		await fake.expectLastBody({ callback_query_id: "cb-123", text: "acknowledged" });
 	});
 
 	test.each([
