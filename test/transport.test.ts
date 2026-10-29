@@ -11,6 +11,7 @@ class FakeFetch {
 	responses: Response[] = [];
 	private responseIndex = 0;
 
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Negative tests must serialize malformed API payloads without claiming they are valid.
 	queueResponse(body: unknown, status = 200): void {
 		this.responses.push(
 			new Response(JSON.stringify(body), {

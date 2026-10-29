@@ -51,6 +51,7 @@ type ValidationResult =
   | { ok: true; config: PigramConfig }
   | { ok: false; errors: string[] };
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This input boundary validates the config with TypeBox before use.
 export function validateConfig(input: unknown): ValidationResult {
   // Basic type check
   if (!Value.Check(PigramConfigSchema, input)) {
