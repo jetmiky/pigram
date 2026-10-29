@@ -181,6 +181,26 @@ describe("ConfigStore", () => {
       expect(state.botUsername).toBeUndefined();
     });
 
+    test.each([
+      [null],
+      [[]],
+      [{}],
+      [{ lastUpdateId: "1" }],
+      [{ lastUpdateId: -1 }],
+      [{ lastUpdateId: 1.5 }],
+      [{ lastUpdateId: 1, pairedUserId: "123" }],
+      [{ lastUpdateId: 1, botId: false }],
+      [{ lastUpdateId: 1, botUsername: 123 }],
+    ])("rejects invalid state without changing the file (%j)", async (state) => {
+      const paths = await resolveScope({ cwd: testCwd, homeDir: testHomeDir });
+      const content = JSON.stringify(state);
+      await mkdir(paths.tempDir, { recursive: true });
+      await writeFile(paths.statePath, content);
+
+      await expect(readState(paths)).rejects.toThrow(`Invalid state at ${paths.statePath}`);
+      expect(await readFile(paths.statePath, "utf8")).toBe(content);
+    });
+
     test("writeState then readState roundtrips", async () => {
       const paths = await resolveScope({ cwd: testCwd, homeDir: testHomeDir });
 

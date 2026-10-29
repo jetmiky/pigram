@@ -8,13 +8,25 @@
  * @see docs/adr/0004-poller-lock.md
  */
 import { writeFile, readFile, unlink } from "node:fs/promises";
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 /** Shape of the lock file on disk. */
-export interface LockInfo {
-  pid: number;
-  tokenHash: string;
-  startedAt: string;
-  heartbeat: string;
+const LockInfoSchema = Type.Object({
+  pid: Type.Integer({ minimum: 1 }),
+  tokenHash: Type.String(),
+  startedAt: Type.String(),
+  heartbeat: Type.String(),
+});
+
+export type LockInfo = Static<typeof LockInfoSchema>;
+
+async function readLockInfo(lockPath: string): Promise<LockInfo> {
+  const lock: unknown = JSON.parse(await readFile(lockPath, "utf8"));
+
+  if (!Value.Check(LockInfoSchema, lock)) throw new Error("Invalid poller lock");
+
+  return lock;
 }
 
 /** Result of a lock acquisition attempt. */
@@ -68,18 +80,18 @@ export async function tryAcquireLock(
     return { acquired: true };
   } catch (err: unknown) {
     // EEXIST means another instance wrote first — check who holds it.
-    if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (!(err instanceof Error) || !("code" in err) || err.code !== "EEXIST") {
       throw err;
     }
 
     let existing: LockInfo;
 
     try {
-      existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      existing = await readLockInfo(lockPath);
     } catch {
       // Lock file unreadable (corrupt, partial write) — steal it.
       await writeFile(lockPath, JSON.stringify(payload));
-      const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      const verify = await readLockInfo(lockPath);
 
       return verify.pid === process.pid
         ? { acquired: true }
@@ -94,7 +106,7 @@ export async function tryAcquireLock(
     // Different token hash = different bot, no conflict.
     if (existing.tokenHash !== tokenHash) {
       await writeFile(lockPath, JSON.stringify(payload));
-      const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+      const verify = await readLockInfo(lockPath);
 
       return verify.pid === process.pid
         ? { acquired: true }
@@ -108,7 +120,7 @@ export async function tryAcquireLock(
 
     // Same bot, holder PID dead → steal.
     await writeFile(lockPath, JSON.stringify(payload));
-    const verify: LockInfo = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+    const verify = await readLockInfo(lockPath);
 
     return verify.pid === process.pid
       ? { acquired: true }
@@ -130,7 +142,7 @@ export async function releaseLock(lockPath: string): Promise<void> {
  */
 export async function touchHeartbeat(lockPath: string): Promise<void> {
   try {
-    const existing = JSON.parse(await readFile(lockPath, "utf8")) as LockInfo;
+    const existing = await readLockInfo(lockPath);
 
     if (existing.pid === process.pid) {
       existing.heartbeat = new Date().toISOString();

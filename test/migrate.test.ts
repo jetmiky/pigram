@@ -377,6 +377,30 @@ describe("migrateLegacyConfig", () => {
     });
   });
 
+  it.each([
+    [null],
+    [[]],
+    [{ botToken: 123 }],
+    [{ botToken: "token", richText: "yes" }],
+    [{ botToken: "token", streamPreviews: 1 }],
+    [{ botToken: "token", allowedUserId: "123" }],
+    [{ botToken: "token", lastUpdateId: -1 }],
+    [{ botToken: "token", botId: false }],
+    [{ botToken: "token", botUsername: 123 }],
+  ])("rejects malformed legacy fields without writing files (%j)", async (legacy) => {
+    const legacyPath = join(cwd, ".pi", "telegram.json");
+    const content = JSON.stringify(legacy);
+    await mkdir(join(cwd, ".pi"), { recursive: true });
+    await writeFile(legacyPath, content);
+
+    const result = await migrateLegacyConfig({ cwd, homeDir, scope: "project" });
+
+    expect(result.status).toBe("error");
+    expect(await readFile(legacyPath, "utf8")).toBe(content);
+    expect(await fileExists(join(cwd, ".pi", "pigram.json"))).toBe(false);
+    expect(await fileExists(join(cwd, ".pi", "tmp", "pigram", "state.json"))).toBe(false);
+  });
+
   describe("global scope migration", () => {
     it("migrates to global paths", async () => {
       const legacyPath = join(homeDir, ".pi", "agent", "telegram.json");

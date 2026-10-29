@@ -6,6 +6,7 @@ import {
   tryAcquireLock,
   releaseLock,
   isPidAlive,
+  touchHeartbeat,
   type LockInfo,
 } from "../src/config/lock.js";
 
@@ -43,6 +44,24 @@ describe("Lock", () => {
       expect(content.tokenHash).toBe("tokenhash123");
       expect(content.startedAt).toBeDefined();
       expect(content.heartbeat).toBeDefined();
+    });
+
+    test.each([
+      "{",
+      "null",
+      "[]",
+      "{}",
+      JSON.stringify({ pid: process.pid }),
+      JSON.stringify({ pid: "123", tokenHash: "tokenhash123", startedAt: "now", heartbeat: "now" }),
+      JSON.stringify({ pid: 0, tokenHash: "tokenhash123", startedAt: "now", heartbeat: "now" }),
+    ])("recovers a malformed lock (%s)", async (content) => {
+      await writeFile(lockPath, content);
+
+      expect(await tryAcquireLock(lockPath, "tokenhash123")).toEqual({ acquired: true });
+      expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({
+        pid: process.pid,
+        tokenHash: "tokenhash123",
+      });
     });
 
     test("re-enters when same PID holds the lock", async () => {
@@ -161,6 +180,14 @@ describe("Lock", () => {
       const content = JSON.parse(await readFile(lockPath, "utf8"));
       expect(content.pid).toBe(process.pid);
     });
+  });
+
+  test("heartbeat leaves a malformed lock unchanged", async () => {
+    const content = JSON.stringify({ pid: process.pid });
+    await writeFile(lockPath, content);
+    await touchHeartbeat(lockPath);
+
+    expect(await readFile(lockPath, "utf8")).toBe(content);
   });
 
   describe("releaseLock", () => {

@@ -1,16 +1,20 @@
 import { join } from "node:path";
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import type { PigramConfig } from "./schema.js";
 import { validateConfig } from "./schema.js";
 
 export type Scope = "project" | "global";
 
-export interface PigramState {
-  lastUpdateId: number;
-  pairedUserId?: number;
-  botId?: number;
-  botUsername?: string;
-}
+const PigramStateSchema = Type.Object({
+  lastUpdateId: Type.Integer({ minimum: 0 }),
+  pairedUserId: Type.Optional(Type.Integer({ minimum: 1 })),
+  botId: Type.Optional(Type.Integer({ minimum: 1 })),
+  botUsername: Type.Optional(Type.String()),
+});
+
+export type PigramState = Static<typeof PigramStateSchema>;
 
 export interface ResolvedPaths {
   scope: Scope;
@@ -115,7 +119,11 @@ export async function readState(
   }
 
   const content = await readFile(paths.statePath, "utf8");
-  const state = JSON.parse(content) as PigramState;
+  const state: unknown = JSON.parse(content);
+
+  if (!Value.Check(PigramStateSchema, state)) {
+    throw new Error(`Invalid state at ${paths.statePath}`);
+  }
 
   return state;
 }
