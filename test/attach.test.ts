@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type Attachment,
   type AttachmentSender,
   AttachmentQueue,
   MAX_ATTACHMENTS_PER_TURN,
@@ -208,7 +207,7 @@ describe("executeAttach", () => {
   test("queues valid files and returns added list", async () => {
     const queue = new AttachmentQueue();
 
-    const fakeStatFile = async (path: string) => {
+    const fakeStatFile = async () => {
       return {
         isFile: () => true,
       };
@@ -269,7 +268,7 @@ describe("executeAttach", () => {
   test("propagates file system errors from statFile", async () => {
     const queue = new AttachmentQueue();
 
-    const fakeStatFile = async (path: string) => {
+    const fakeStatFile = async () => {
       throw new Error("ENOENT: no such file");
     };
 

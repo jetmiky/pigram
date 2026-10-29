@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentSessionPort, PiSessionDriver, ThinkingLevel } from "../src/pi/session";
+import type { PiSessionDriver, ThinkingLevel } from "../src/pi/session";
 import { createAgentSession, sumAssistantUsage } from "../src/pi/session";
 
 interface FakeSessionState {

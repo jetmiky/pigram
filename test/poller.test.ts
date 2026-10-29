@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test";
 import type { TelegramUpdate } from "../src/telegram/transport.js";
-import { TelegramPoller, type UpdateHandler, type PollerDeps } from "../src/telegram/poller.js";
+import { TelegramPoller, type UpdateHandler } from "../src/telegram/poller.js";
 
 // Helper to yield control to event loop
 const yield_tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -247,7 +247,7 @@ describe("TelegramPoller", () => {
 
 	test("AbortError from getUpdates exits cleanly", async () => {
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: unknown) => {
 				// Simulate an abort error
 				const err = new Error("The operation was aborted");
 				err.name = "AbortError";
@@ -360,7 +360,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: unknown) => {
 				await yield_tick();
 				callCount++;
 

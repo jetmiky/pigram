@@ -83,14 +83,11 @@ describe("TypingIndicator", () => {
 	});
 
 	test("transport error is swallowed — does not throw", async () => {
-		const calls: Array<{ chatId: number; action: string }> = [];
-
 		const deps: TypingDeps = {
 			sendChatAction: async () => {
 				throw new Error("network down");
 			},
-			setInterval: (fn: () => void) => {
-				// store but we won't tick
+			setInterval: () => {
 				return 1 as unknown as ReturnType<typeof globalThis.setInterval>;
 			},
 			clearInterval: () => {},

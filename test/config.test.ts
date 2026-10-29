@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { validateConfig, DEFAULT_DELIVERY, DEFAULT_UX } from "../src/config/schema";
+import { validateConfig, DEFAULT_DELIVERY } from "../src/config/schema";
 
 describe("PigramConfig validation", () => {
   test("valid minimal config (botToken only) applies UX defaults", () => {

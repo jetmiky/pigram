@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHttpTransport, type TelegramTransport } from "../src/telegram/transport";
+import { createHttpTransport } from "../src/telegram/transport";
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 

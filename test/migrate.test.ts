@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   migrateLegacyConfig,
   legacyPaths,
-  type MigrationResult,
 } from "../src/config/migrate.js";
 import { readConfig, readState } from "../src/config/store.js";
 

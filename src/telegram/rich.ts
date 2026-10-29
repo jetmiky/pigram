@@ -23,13 +23,6 @@
  */
 const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$/;
 
-/** A data row is any non-empty line containing a pipe. */
-function isTableRow(line: string): boolean {
-	const stripped = line.trim();
-
-	return stripped.length > 0 && stripped.includes("|");
-}
-
 /**
  * True when the markdown contains a complete GFM pipe table: a header row
  * followed by a delimiter row. Fenced code blocks are skipped — a table

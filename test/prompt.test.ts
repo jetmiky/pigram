@@ -1,7 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
   type InboundMessage,
-  type MappedPrompt,
   mapInboundMessage,
   routeInboundText,
   FollowUpQueue,
