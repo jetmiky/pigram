@@ -164,9 +164,7 @@ export function startHeartbeat(lockPath: string, intervalMs = 10_000): () => voi
   }, intervalMs);
 
   // Don't keep the process alive just for heartbeat.
-  if (typeof timer === "object" && "unref" in timer) {
-    timer.unref();
-  }
+  timer.unref();
 
   return () => clearInterval(timer);
 }

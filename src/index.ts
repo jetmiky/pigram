@@ -235,11 +235,11 @@ export default function pigram(pi: ExtensionAPI): void {
 	 */
 	function runGit(args: string[], cwd: string): Promise<GitRunResult> {
 		return new Promise((resolve) => {
-			execFile("git", args, { cwd }, (error, stdout, stderr) => {
+			execFile("git", args, { cwd, encoding: "utf8" }, (error, stdout, stderr) => {
 				resolve({
 					exitCode: error ? (Number(error.code) || 1) : 0,
-					stdout: typeof stdout === "string" ? stdout : "",
-					stderr: typeof stderr === "string" ? stderr : "",
+					stdout,
+					stderr,
 				});
 			});
 		});

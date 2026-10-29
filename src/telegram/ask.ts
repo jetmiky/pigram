@@ -253,7 +253,7 @@ export class TelegramAskController {
 export function createTelegramAskTool(
 		getController: (() => TelegramAskController | undefined) | TelegramAskController,
 ): ToolDefinition<typeof telegramAskParameters, TelegramAskOutcome> {
-	const resolveController = typeof getController === "function" ? getController : () => getController;
+	const resolveController = getController instanceof TelegramAskController ? () => getController : getController;
 
 	return {
 		name: "telegram_ask",

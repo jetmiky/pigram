@@ -193,6 +193,25 @@ describe("telegram_ask extension tool boundary", () => {
 		).rejects.toThrow("timeoutSeconds must be between 15 and 900");
 	});
 
+	test("resolves a controller getter at execution time", async () => {
+		let controller: TelegramAskController | undefined;
+		const tool = createTelegramAskTool(() => controller);
+		// SAFETY: this tool ignores its execution context; only the controller getter is used.
+		const context = {} as never;
+
+		expect((await tool.execute("before", { kind: "text", question: "Before connect" }, undefined, undefined, context)).details).toEqual({
+			status: "unavailable",
+			reason: "not_telegram_turn",
+		});
+
+		controller = new TelegramAskController({ transport: new FakeTransport() });
+		controller.beginTurn({ chatId: 42, userId: 7 });
+		const pending = tool.execute("after", { kind: "text", question: "After connect" }, undefined, undefined, context);
+		controller.handleText("connected", { chatId: 42, userId: 7 });
+
+		expect((await pending).details).toEqual({ status: "answered", value: "connected" });
+	});
+
 	test("hasPendingText is true only while a text question waits", async () => {
 		const transport = new FakeTransport();
 		const controller = new TelegramAskController({ transport, idGen: () => "ask-10" });
