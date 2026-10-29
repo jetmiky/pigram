@@ -1,6 +1,8 @@
 import { describe, test, expect, mock } from "bun:test";
-import type { TelegramUpdate } from "../src/telegram/transport.js";
-import { TelegramPoller, type UpdateHandler } from "../src/telegram/poller.js";
+import type { TelegramTransport, TelegramUpdate } from "../src/telegram/transport.js";
+import { TelegramPoller, type PollerDeps, type UpdateHandler } from "../src/telegram/poller.js";
+
+type GetUpdatesOptions = Parameters<TelegramTransport["getUpdates"]>[0];
 
 // Helper to yield control to event loop
 const yield_tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -18,7 +20,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop to allow abort signal to propagate
 				await yield_tick();
 				
@@ -91,7 +93,7 @@ describe("TelegramPoller", () => {
 		const sequence: string[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
 				callCount++;
 
@@ -194,7 +196,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop
 				await yield_tick();
 				
@@ -247,7 +249,7 @@ describe("TelegramPoller", () => {
 
 	test("AbortError from getUpdates exits cleanly", async () => {
 		const transport = {
-			getUpdates: mock(async (_opts: unknown) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions) => {
 				// Simulate an abort error
 				const err = new Error("The operation was aborted");
 				err.name = "AbortError";
@@ -285,7 +287,7 @@ describe("TelegramPoller", () => {
 		const errors: unknown[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				// Yield to event loop
 				await yield_tick();
 				
@@ -321,7 +323,7 @@ describe("TelegramPoller", () => {
 			cursor = updateId;
 		});
 
-		const onError = mock((err: unknown) => {
+		const onError = mock<NonNullable<PollerDeps["onError"]>>((err) => {
 			errors.push(err);
 		});
 
@@ -360,7 +362,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions) => {
 				await yield_tick();
 				callCount++;
 
@@ -410,7 +412,7 @@ describe("TelegramPoller", () => {
 		let callCount = 0;
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
 				callCount++;
 
@@ -461,7 +463,7 @@ describe("TelegramPoller", () => {
 		const callTimes: number[] = [];
 
 		const transport = {
-			getUpdates: mock(async (_opts: unknown, signal?: AbortSignal) => {
+			getUpdates: mock(async (_opts: GetUpdatesOptions, signal?: AbortSignal) => {
 				await yield_tick();
 
 				if (signal?.aborted) {
@@ -522,7 +524,7 @@ describe("TelegramPoller", () => {
 			let n = 0;
 
 			const transport = {
-				getUpdates: mock(async (_o: unknown, signal?: AbortSignal) => {
+				getUpdates: mock(async (_o: GetUpdatesOptions, signal?: AbortSignal) => {
 					await yield_tick();
 
 					if (signal?.aborted) {
