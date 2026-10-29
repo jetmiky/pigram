@@ -102,12 +102,16 @@ export function createAgentSession(driver: PiSessionDriver): AgentSessionPort {
 		getStatus(): SessionStatus {
 			const model = driver.session.model;
 
-			return {
-				...(model?.id ? { modelId: model.id } : {}),
-				...(model?.provider ? { provider: model.provider } : {}),
+			const status: SessionStatus = {
 				thinkingLevel: driver.getThinkingLevel(),
 				busy: driver.session.isProcessing ?? false,
 			};
+
+			if (model?.id) status.modelId = model.id;
+
+			if (model?.provider) status.provider = model.provider;
+
+			return status;
 		},
 
 		async setModel(modelId: string): Promise<void> {

@@ -69,6 +69,7 @@ describe("telegram_ask extension tool boundary", () => {
 		const result = await pending;
 		expect(result.details).toEqual({ status: "answered", value: "friendly" });
 		expect(transport.editMessageTextCalls[0]?.text).toBe("Pick one\n✓ Friendly");
+		expect(transport.answerCallbackQueryCalls[0]).toStrictEqual({ callbackQueryId: "q-ask-1:0" });
 	});
 
 	test("wrong user and wrong chat do not resolve; valid confirm No does", async () => {
@@ -79,7 +80,10 @@ describe("telegram_ask extension tool boundary", () => {
 
 		await controller.handleCallbackQuery(query("ask-2:1", 8));
 		await controller.handleCallbackQuery(query("ask-2:1", 7, 99));
-		expect(transport.answerCallbackQueryCalls).toHaveLength(2);
+		expect(transport.answerCallbackQueryCalls).toStrictEqual([
+			{ callbackQueryId: "q-ask-2:1", text: "Not authorized" },
+			{ callbackQueryId: "q-ask-2:1", text: "Not authorized" },
+		]);
 		expect(await Promise.race([pending.then(() => "done"), Bun.sleep(5).then(() => "pending")])).toBe("pending");
 
 		await controller.handleCallbackQuery(query("ask-2:1"));
@@ -92,6 +96,7 @@ describe("telegram_ask extension tool boundary", () => {
 		controller.beginTurn({ chatId: 42, userId: 7 });
 		const pending = runTool(controller, { kind: "text", question: "What is your name?" });
 
+		expect(transport.sendMessageCalls[0]).toStrictEqual({ chatId: 42, text: "What is your name?" });
 		expect(controller.handleText("Alice", { chatId: 99, userId: 7 })).toBe(false);
 		expect(controller.handleText("Alice", { chatId: 42, userId: 7 })).toBe(true);
 		expect((await pending).details).toEqual({ status: "answered", value: "Alice" });

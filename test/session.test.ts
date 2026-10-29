@@ -75,10 +75,36 @@ describe("AgentSession adapter", () => {
 
 		const status = session.getStatus();
 
-		expect(status.modelId).toBeUndefined();
-		expect(status.provider).toBeUndefined();
+		expect(status).not.toHaveProperty("modelId");
+		expect(status).not.toHaveProperty("provider");
 		expect(status.thinkingLevel).toBe("off");
 		expect(status.busy).toBe(false);
+	});
+
+	test("getStatus omits empty model fields", () => {
+		const state: FakeSessionState = {
+			model: { id: "", provider: "" },
+			isProcessing: false,
+			thinkingLevel: "off",
+			calls: [],
+		};
+
+		const session = createAgentSession(createFakeDriver(state));
+
+		expect(session.getStatus()).toStrictEqual({ thinkingLevel: "off", busy: false });
+	});
+
+	test("getStatus includes a model ID without adding an absent provider", () => {
+		const state: FakeSessionState = {
+			model: { id: "model-id" },
+			isProcessing: false,
+			thinkingLevel: "off",
+			calls: [],
+		};
+
+		const session = createAgentSession(createFakeDriver(state));
+
+		expect(session.getStatus()).toStrictEqual({ modelId: "model-id", thinkingLevel: "off", busy: false });
 	});
 
 	test("getStatus defaults isProcessing to false when undefined", () => {

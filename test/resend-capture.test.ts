@@ -53,6 +53,15 @@ describe("resolveReplyToStore", () => {
 		expect(result.errorMessage).toBe("boom");
 	});
 
+	test.each(["", undefined])("omits absent or empty error details (%s)", (errorMessage) => {
+		const message: AgentMessageLike = { role: "assistant", stopReason: "error", content: [] };
+
+		if (errorMessage !== undefined) message.errorMessage = errorMessage;
+
+		expect(resolveReplyToStore([message], true)).toStrictEqual({ shouldDeliver: true });
+		expect(resolveReplyToStore([message], false)).toStrictEqual({ shouldDeliver: false });
+	});
+
 	test("returns undefined text when assistant produced no text blocks", () => {
 		const messages: AgentMessageLike[] = [
 			{ role: "assistant", stopReason: "stop", content: [{ type: "toolCall", text: "..." }] },

@@ -170,11 +170,10 @@ export class TelegramAskController {
 				? { inline_keyboard: [[{ text: "Yes", callback_data: `${id}:0` }], [{ text: "No", callback_data: `${id}:1` }]] }
 				: undefined;
 
-		const messageId = this.transport.sendMessage({
-			chatId: owner.chatId,
-			text,
-			...(replyMarkup ? { replyMarkup } : {}),
-		}).then((message) => message.message_id);
+		const messageOptions: Parameters<Transport["sendMessage"]>[0] = { chatId: owner.chatId, text };
+
+		if (replyMarkup) messageOptions.replyMarkup = replyMarkup;
+		const messageId = this.transport.sendMessage(messageOptions).then((message) => message.message_id);
 
 		return new Promise<TelegramAskOutcome>((resolve, reject) => {
 			const pending: Pending = { id, owner, params, messageId, resolve, settled: false, onAbort: undefined };
@@ -221,7 +220,10 @@ export class TelegramAskController {
 	}
 
 	private async answer(callbackQueryId: string, text?: string): Promise<void> {
-		await this.transport.answerCallbackQuery({ callbackQueryId, ...(text ? { text } : {}) });
+		const options: Parameters<Transport["answerCallbackQuery"]>[0] = { callbackQueryId };
+
+		if (text) options.text = text;
+		await this.transport.answerCallbackQuery(options);
 	}
 
 	private finish(pending: Pending, outcome: TelegramAskOutcome, suffix: string): void {

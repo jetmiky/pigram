@@ -45,7 +45,7 @@ import {
 } from "./domain/commands.js";
 import { mapInboundMessage, routeInboundText, FollowUpQueue, type InboundMessage } from "./domain/prompt.js";
 import { getGitExecSpec, runGitSpec, type GitRunResult } from "./domain/git.js";
-import { formatSessionStatus, formatFooterStatus, type SessionStatusView } from "./domain/status.js";
+import { formatSessionStatus, formatFooterStatus, type SessionStatusView, type FooterStatusView } from "./domain/status.js";
 import {
 	parseNotifyArgs,
 	consumePendingNotify,
@@ -137,7 +137,10 @@ export default function pigram(pi: ExtensionAPI): void {
 
 	// --- Config + State persistence ---
 	async function loadConfig(cwd: string, scope?: Scope): Promise<void> {
-		paths = await resolveScope({ cwd, homeDir: homedir(), ...(scope ? { scope } : {}) });
+		const scopeOptions: Parameters<typeof resolveScope>[0] = { cwd, homeDir: homedir() };
+
+		if (scope) scopeOptions.scope = scope;
+		paths = await resolveScope(scopeOptions);
 		// Best-effort legacy migration before reading.
 		const migrateScope: Scope = paths.scope;
 		await migrateLegacyConfig({ cwd, homeDir: homedir(), scope: migrateScope }).catch(() => undefined);
@@ -489,7 +492,9 @@ export default function pigram(pi: ExtensionAPI): void {
 			: undefined;
 
 		typing?.start();
-		activeTurn = { chatId, userId, ...(preview ? { preview } : {}), stopTyping: () => typing?.stop() };
+		activeTurn = { chatId, userId, stopTyping: () => typing?.stop() };
+
+		if (preview) activeTurn.preview = preview;
 		askController?.beginTurn({ chatId, userId });
 		const mapped = mapInboundMessage(msg);
 		await session.sendPrompt(mapped.text, mapped.imagePaths);
@@ -568,14 +573,10 @@ export default function pigram(pi: ExtensionAPI): void {
 			// Surface a persistent footer line so the user can see at a glance that
 			// Telegram is connected, which scope is active, and which config loaded.
 			if (paths) {
-				latestCtx?.ui.setStatus(
-					"pigram",
-					formatFooterStatus({
-						...(me.username ? { botUsername: me.username } : {}),
-						mode: paths.scope,
-						configPath: paths.configPath,
-					}),
-				);
+				const footerStatus: FooterStatusView = { mode: paths.scope, configPath: paths.configPath };
+
+				if (me.username) footerStatus.botUsername = me.username;
+				latestCtx?.ui.setStatus("pigram", formatFooterStatus(footerStatus));
 			}
 
 			const poller = new TelegramPoller({
@@ -668,17 +669,14 @@ export default function pigram(pi: ExtensionAPI): void {
 			return;
 		}
 
-		const request: ReconnectRequest = {
-			requestId: randomUUID(),
-			chatId,
-			...(name ? { sessionName: name } : {}),
-		};
+		const request: ReconnectRequest = { requestId: randomUUID(), chatId };
+
+		if (name) request.sessionName = name;
 
 		try {
 			const parentSession = cmdCtx.sessionManager.getSessionFile();
 
-			const result = await cmdCtx.newSession({
-				...(parentSession ? { parentSession } : {}),
+			const newSessionOptions: Parameters<ExtensionCommandContext["newSession"]>[0] = {
 				setup: async (sessionManager) => {
 					// Runs against the NEW session's manager, before its
 					// session_start fires. Persist the reconnect request (and
@@ -694,7 +692,10 @@ export default function pigram(pi: ExtensionAPI): void {
 					latestCommandCtx = nextCtx;
 					latestCtx = nextCtx;
 				},
-			});
+			};
+
+			if (parentSession) newSessionOptions.parentSession = parentSession;
+			const result = await cmdCtx.newSession(newSessionOptions);
 
 			if (result.cancelled) {
 				await sendPlain(chatId, "New session cancelled");
@@ -996,14 +997,7 @@ export default function pigram(pi: ExtensionAPI): void {
 			pairing.pairedUserId ?? undefined,
 		);
 
-		const consumed = consumePendingNotify(
-			effectiveNotify,
-			// exactOptionalPropertyTypes: only include fields that are defined.
-			{
-				...(resolved.text ? { text: resolved.text } : {}),
-				...(resolved.errorMessage ? { errorMessage: resolved.errorMessage } : {}),
-			},
-		);
+		const consumed = consumePendingNotify(effectiveNotify, resolved);
 
 		// Only mutate explicit command state. Config-driven "all" remains a
 		// policy and is re-resolved on each turn rather than becoming an override.

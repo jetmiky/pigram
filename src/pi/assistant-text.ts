@@ -129,7 +129,11 @@ export function resolveReplyToStore(
 	}
 
 	if (outcome.stopReason === "error") {
-		return { shouldDeliver: hasActiveTurn, ...(outcome.errorMessage ? { errorMessage: outcome.errorMessage } : {}) };
+		const reply: ResolvedReply = { shouldDeliver: hasActiveTurn };
+
+		if (outcome.errorMessage) reply.errorMessage = outcome.errorMessage;
+
+		return reply;
 	}
 
 	if (outcome.text) {
