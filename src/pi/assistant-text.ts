@@ -8,6 +8,9 @@
  * bundle never pulls pi's types into runtime code.
  */
 
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+
 /** A minimal structural view of a pi agent message. */
 export interface AgentMessageLike {
 	role?: string;
@@ -15,6 +18,8 @@ export interface AgentMessageLike {
 	errorMessage?: string;
 	content?: unknown;
 }
+
+const TextBlockSchema = Type.Object({ type: Type.Literal("text"), text: Type.String() });
 
 /**
  * Concatenate the text of every `text` block in a message, in order.
@@ -25,11 +30,7 @@ export function getAgentMessageText(message: AgentMessageLike): string {
 	const content = Array.isArray(message.content) ? message.content : [];
 
 	const joined = content
-		.flatMap((block) =>
-			typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string"
-				? [block.text]
-				: [],
-		)
+		.flatMap((block) => Value.Check(TextBlockSchema, block) ? [block.text] : [])
 		.join("");
 
 	return stripReasoningTags(joined);
@@ -86,9 +87,9 @@ export function extractAssistantText(messages: readonly AgentMessageLike[]): Ass
 
 		if (text) outcome.text = text;
 
-		if (typeof message.stopReason === "string") outcome.stopReason = message.stopReason;
+		if (Value.Check(Type.String(), message.stopReason)) outcome.stopReason = message.stopReason;
 
-		if (typeof message.errorMessage === "string") outcome.errorMessage = message.errorMessage;
+		if (Value.Check(Type.String(), message.errorMessage)) outcome.errorMessage = message.errorMessage;
 
 		return outcome;
 	}

@@ -45,6 +45,36 @@ test("getAgentMessageText skips malformed blocks", () => {
 	expect(getAgentMessageText(msg)).toBe("ok");
 });
 
+test("getAgentMessageText validates text blocks without discarding valid siblings", () => {
+	const message: AgentMessageLike = {
+		role: "assistant",
+		content: [
+			{ type: "text", text: 42 },
+			{ type: "text", text: "valid", extra: true },
+			{ type: "thinking", text: "hidden" },
+			{ type: "text", text: null },
+			["not a content block"],
+			{ type: "text", text: " reply" },
+		],
+	};
+
+	expect(getAgentMessageText(message)).toBe("valid reply");
+});
+
+test("extractAssistantText preserves empty typed metadata", () => {
+	expect(extractAssistantText([{ role: "assistant", stopReason: "", errorMessage: "" }])).toStrictEqual({
+		stopReason: "",
+		errorMessage: "",
+	});
+});
+
+test.each([
+	['[{"role":"assistant","stopReason":42,"errorMessage":"valid"}]', { errorMessage: "valid" }],
+	['[{"role":"assistant","stopReason":"error","errorMessage":{}}]', { stopReason: "error" }],
+])("extractAssistantText validates metadata fields independently (%s)", (json, expected) => {
+	expect(extractAssistantText(JSON.parse(json))).toStrictEqual(expected);
+});
+
 test("extractAssistantText picks the last assistant message", () => {
 	const messages: AgentMessageLike[] = [
 		{ role: "user", content: [{ type: "text", text: "hi" }] },
