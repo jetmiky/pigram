@@ -63,7 +63,7 @@ import {
 import { bindPiSession } from "./pi/session-binding.js";
 import type { ThinkingLevel } from "./pi/session.js";
 import { AttachmentQueue, flushAttachments, buildAttachToolParams, executeAttach } from "./pi/attach.js";
-import { getAgentMessageText, resolveReplyToStore, type AgentMessageLike } from "./pi/assistant-text.js";
+import { getAgentMessageText, resolveReplyToStore } from "./pi/assistant-text.js";
 import { PreviewSession } from "./telegram/preview.js";
 
 export const PIGRAM_VERSION = "0.1.0";
@@ -79,7 +79,7 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "med
 
 /** Coerce arbitrary text to a valid ThinkingLevel, or undefined if not recognised. */
 function asThinkingLevel(value: string): ThinkingLevel | undefined {
-	return (THINKING_LEVELS as readonly string[]).includes(value) ? (value as ThinkingLevel) : undefined;
+	return THINKING_LEVELS.find((level) => level === value);
 }
 
 /**
@@ -237,7 +237,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		return new Promise((resolve) => {
 			execFile("git", args, { cwd }, (error, stdout, stderr) => {
 				resolve({
-					exitCode: error ? ((error as { code?: number }).code ?? 1) : 0,
+					exitCode: error ? (Number(error.code) || 1) : 0,
 					stdout: typeof stdout === "string" ? stdout : "",
 					stderr: typeof stderr === "string" ? stderr : "",
 				});
@@ -891,7 +891,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		],
 		parameters: buildAttachToolParams(),
 		async execute(_toolCallId, params) {
-			const result = await executeAttach(params as { paths: string[] }, attachments);
+			const result = await executeAttach(params, attachments);
 
 			// Flush immediately if we know the active chat.
 			if (transport && activeChatId !== undefined) {
@@ -967,7 +967,7 @@ export default function pigram(pi: ExtensionAPI): void {
 		const turn = activeTurn;
 
 		if (!turn?.preview) return;
-		const message = event.message as AgentMessageLike;
+		const message = event.message;
 
 		if (message?.role !== "assistant") return;
 		const partial = getAgentMessageText(message);
@@ -982,7 +982,7 @@ export default function pigram(pi: ExtensionAPI): void {
 
 		// Always resolve the reply so /resend can replay it — even when the
 		// prompt originated from the laptop (no activeTurn).
-		const resolved = resolveReplyToStore(event.messages as AgentMessageLike[], !!turn);
+		const resolved = resolveReplyToStore(event.messages, !!turn);
 
 		// Store for /resend regardless of delivery.
 		if (resolved.text) lastReplyMarkdown = resolved.text;

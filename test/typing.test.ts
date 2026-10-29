@@ -1,6 +1,13 @@
 import { describe, test, expect } from "bun:test";
 import { TypingIndicator, type TypingDeps } from "../src/telegram/typing.js";
 
+function inactiveTimer(): ReturnType<typeof globalThis.setInterval> {
+	const timer = globalThis.setInterval(() => {}, 60_000);
+	globalThis.clearInterval(timer);
+
+	return timer;
+}
+
 /** Minimal fake that records sendChatAction calls and drives timers. */
 function createFakeDeps() {
 	const calls: Array<{ chatId: number; action: string }> = [];
@@ -13,7 +20,7 @@ function createFakeDeps() {
 		setInterval: (fn: () => void) => {
 			cb = fn;
 
-			return 1 as unknown as number;
+			return inactiveTimer();
 		},
 		clearInterval: () => {
 			cb = undefined;
@@ -88,7 +95,7 @@ describe("TypingIndicator", () => {
 				throw new Error("network down");
 			},
 			setInterval: () => {
-				return 1 as unknown as ReturnType<typeof globalThis.setInterval>;
+				return inactiveTimer();
 			},
 			clearInterval: () => {},
 		};

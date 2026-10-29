@@ -46,7 +46,7 @@ export function legacyPaths(opts: {
   cwd: string;
   homeDir: string;
   scope: Scope;
-}): { legacyConfigPath: string } {
+}) {
   return {
     legacyConfigPath: getLegacyPath(opts),
   };

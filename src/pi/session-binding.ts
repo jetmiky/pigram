@@ -32,16 +32,16 @@ import { resolveModelTarget } from "../domain/model.js";
  */
 export type CommandContextGetter = () => ExtensionContext | undefined;
 
-const MIME_BY_EXT: Record<string, string> = {
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png": "image/png",
-	".webp": "image/webp",
-	".gif": "image/gif",
-};
+const MIME_BY_EXT = new Map([
+	[".jpg", "image/jpeg"],
+	[".jpeg", "image/jpeg"],
+	[".png", "image/png"],
+	[".webp", "image/webp"],
+	[".gif", "image/gif"],
+]);
 
 function mimeFromPath(path: string): string {
-	return MIME_BY_EXT[extname(path).toLowerCase()] ?? "image/jpeg";
+	return MIME_BY_EXT.get(extname(path).toLowerCase()) ?? "image/jpeg";
 }
 
 async function toImageContent(path: string): Promise<ImageContent> {
@@ -75,7 +75,7 @@ export function bindPiSession(pi: ExtensionAPI, getCtx: CommandContextGetter): A
 			const model = ctx?.model;
 
 			const status: SessionStatus = {
-				thinkingLevel: pi.getThinkingLevel() as ThinkingLevel,
+				thinkingLevel: pi.getThinkingLevel(),
 				busy: ctx ? !ctx.isIdle() : false,
 			};
 

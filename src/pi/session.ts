@@ -86,7 +86,7 @@ export interface PiSessionDriver {
 		readonly model?: { id: string; provider?: string };
 		readonly isProcessing?: boolean;
 		setModel(modelId: string): Promise<void>;
-		compact(): Promise<unknown>;
+		compact(): Promise<void>;
 		abort(): Promise<void>;
 		prompt(text: string, options?: { images?: string[] }): Promise<void>;
 	};

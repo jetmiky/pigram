@@ -69,7 +69,7 @@ describe("formatGitReply", () => {
 
 describe("runGitSpec", () => {
 	// A scripted runner: records the argv it was called with and returns queued results.
-	function scriptedRunner(results: GitRunResult[]): { runner: GitRunner; calls: string[][] } {
+	function scriptedRunner(results: GitRunResult[]) {
 		const calls: string[][] = [];
 		let i = 0;
 

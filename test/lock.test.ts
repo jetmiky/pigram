@@ -155,8 +155,7 @@ describe("Lock", () => {
       expect(fulfilled.length).toBe(1);
       expect(rejected.length).toBe(1);
 
-      const rejectErr = (rejected[0] as PromiseRejectedResult).reason as NodeJS.ErrnoException;
-      expect(rejectErr.code).toBe("EEXIST");
+      expect(rejected[0]?.reason).toMatchObject({ code: "EEXIST" });
 
       // The lock file should contain valid JSON
       const content = JSON.parse(await readFile(lockPath, "utf8"));

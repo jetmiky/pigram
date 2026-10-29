@@ -8,12 +8,6 @@
  * bundle never pulls pi's types into runtime code.
  */
 
-/** A minimal structural view of a pi content block. */
-interface ContentBlock {
-	type: string;
-	text?: string;
-}
-
 /** A minimal structural view of a pi agent message. */
 export interface AgentMessageLike {
 	role?: string;
@@ -31,9 +25,11 @@ export function getAgentMessageText(message: AgentMessageLike): string {
 	const content = Array.isArray(message.content) ? message.content : [];
 
 	const joined = content
-		.filter((block): block is ContentBlock => typeof block === "object" && block !== null && "type" in block)
-		.filter((block) => block.type === "text" && typeof block.text === "string")
-		.map((block) => block.text as string)
+		.flatMap((block) =>
+			typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string"
+				? [block.text]
+				: [],
+		)
 		.join("");
 
 	return stripReasoningTags(joined);

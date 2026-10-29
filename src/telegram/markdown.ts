@@ -295,7 +295,7 @@ export function markdownToTelegramHtml(markdown: string): string {
 	};
 	
 	marked.use({ renderer });
-	const html = marked.parse(sanitized) as string;
+	const html = marked.parse(sanitized, { async: false });
 	
 	// Collapse the extra blank lines introduced by block separators and trim edges
 	return html.replace(/\n{3,}/g, "\n\n").trim();

@@ -29,8 +29,6 @@ function createFakeDriver(state: FakeSessionState): PiSessionDriver {
 			},
 			compact: async () => {
 				state.calls.push({ method: "session.compact", args: [] });
-
-				return { success: true };
 			},
 			abort: async () => {
 				state.calls.push({ method: "session.abort", args: [] });

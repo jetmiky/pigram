@@ -46,7 +46,8 @@ function query(data: string, userId = 7, chatId = 42): TelegramCallbackQuery {
 function runTool(controller: TelegramAskController, params: TelegramAskToolParams, signal?: AbortSignal) {
 	const tool = createTelegramAskTool(controller);
 
-	return tool.execute("call-1", params as never, signal, undefined, {} as never);
+	// SAFETY: this tool ignores its execution context; the test drives it through the supplied controller.
+	return tool.execute("call-1", params, signal, undefined, {} as never);
 }
 
 describe("telegram_ask extension tool boundary", () => {
@@ -184,11 +185,11 @@ describe("telegram_ask extension tool boundary", () => {
 		await expect(runTool(controller, { kind: "select", question: "x", options: [] })).rejects.toThrow(
 			"select requires at least one option",
 		);
+		const invalidConfirm = { kind: "confirm" as const, question: "x", options: [{ label: "A", value: "a" }] };
+
+		await expect(runTool(controller, invalidConfirm)).rejects.toThrow("confirm does not accept options");
 		await expect(
-			runTool(controller, { kind: "confirm", question: "x", options: [{ label: "A", value: "a" }] } as never),
-		).rejects.toThrow("confirm does not accept options");
-		await expect(
-			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 } as never),
+			runTool(controller, { kind: "text", question: "x", timeoutSeconds: 5 }),
 		).rejects.toThrow("timeoutSeconds must be between 15 and 900");
 	});
 

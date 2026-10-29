@@ -144,12 +144,12 @@ describe("TelegramPoller", () => {
 
 				// First call: return one update
 				if (getUpdatesCalls.length === 1) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Second call: return another update
 				if (getUpdatesCalls.length === 2) {
-					return [{ update_id: 101 }] as TelegramUpdate[];
+					return [{ update_id: 101 }];
 				}
 
 				// Third call and onwards: return empty to avoid infinite loop
@@ -209,7 +209,7 @@ describe("TelegramPoller", () => {
 
 				// First call: return one update
 				if (callCount === 1) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Subsequent calls: return empty
@@ -305,7 +305,7 @@ describe("TelegramPoller", () => {
 
 				// Second call: return an update
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				// Subsequent calls: return empty
@@ -344,7 +344,7 @@ describe("TelegramPoller", () => {
 		// onError should have been called once with the network error
 		expect(onError).toHaveBeenCalledTimes(1);
 		expect(errors.length).toBe(1);
-		expect((errors[0] as Error).message).toBe("Network failure");
+		expect(errors[0]).toEqual(new Error("Network failure"));
 
 		// Handler should have been called once (for update 100)
 		expect(handler).toHaveBeenCalledTimes(1);
@@ -371,7 +371,7 @@ describe("TelegramPoller", () => {
 				}
 
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				return [];
@@ -425,7 +425,7 @@ describe("TelegramPoller", () => {
 				}
 
 				if (callCount === 2) {
-					return [{ update_id: 100 }] as TelegramUpdate[];
+					return [{ update_id: 100 }];
 				}
 
 				return [];
@@ -479,7 +479,7 @@ describe("TelegramPoller", () => {
 				}
 
 				// Subsequent calls idle.
-				return [] as TelegramUpdate[];
+				return [];
 			}),
 		};
 
@@ -535,7 +535,7 @@ describe("TelegramPoller", () => {
 
 					if (++n === 1) throw new Error(message);
 
-					return [] as TelegramUpdate[];
+					return [];
 				}),
 			};
 
